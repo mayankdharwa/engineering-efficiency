@@ -1,0 +1,14 @@
+# Backend data directory (SQLite database lives here).
+data/
+*.db
+*.sqlite3
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
