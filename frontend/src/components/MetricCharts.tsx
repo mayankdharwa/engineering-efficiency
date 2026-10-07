@@ -67,8 +67,8 @@ export function MetricCharts({ members }: MetricChartsProps) {
         y: { scale: () => scaleBand<string>().padding(0.2) },
       },
       color: {
-        domain: ['Capacity', 'Taken'],
-        range: [COLOR_CAPACITY, COLOR_TAKEN],
+        domain: ['Taken', 'Capacity'],
+        range: [COLOR_TAKEN, COLOR_CAPACITY],
         legend: colorLegend({ label: 'Points' }),
       },
       tooltip,
