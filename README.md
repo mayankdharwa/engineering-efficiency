@@ -4,9 +4,9 @@ A small, local dashboard for engineering-team efficiency metrics sourced from
 [Linear](https://linear.app). Data is downloaded from the Linear API and stored
 in a local SQLite database; the dashboard reads only from that database.
 
-**Scope:** configuration, Linear download, SQLite storage, per-team refresh,
-computed efficiency metrics (planning efficiency, velocity, bandwidth) and
-TanStack Charts visualisations.
+**Scope:** configuration, Linear download, SQLite storage, per-team refresh and
+delete, role tagging (DEV/QA), computed efficiency metrics (planning efficiency,
+velocity, velocity trend, bandwidth) and TanStack Charts visualisations.
 
 ## Efficiency model
 
@@ -24,9 +24,10 @@ TanStack Charts visualisations.
 - **Velocity** = `done ÷ (progress × taken)`, where `progress` is the fraction of
   the cycle's working days elapsed so far (only `completed` states count as
   done). At cycle end this reduces to `done ÷ taken`; 100% means on pace.
-- The **velocity trend** replots that formula at the end of each elapsed working
-  day (points completed *by* that day ÷ points expected *by* that day), showing
-  how pace has moved through the cycle. It is returned per team and per role.
+- The **velocity trend** plots the same metric at the end of each elapsed working
+  day: cumulative points done ÷ **fractional points**, where fractional points =
+  `(taken ÷ working_days) × passed_days`. The last point equals the headline
+  velocity. It is returned per team and per role.
 - **Bandwidth efficiency** = `taken ÷ capacity`.
 - Members can be tagged with a **role** (`DEV` or `QA`). The dashboard groups the
   metrics above by role (team totals are recomputed per group), so DEV and QA can
@@ -70,11 +71,13 @@ engineering-efficiency/
 └── frontend/
     ├── src/
     │   ├── api.ts            # typed API client
+    │   ├── types.ts          # shared API types
     │   ├── router.tsx        # TanStack Router routes
     │   ├── index.css         # Tailwind v4 + shadcn theme tokens
+    │   ├── lib/              # formatting + table helpers
     │   ├── pages/            # DashboardPage, ConfigPage
-    │   ├── components/       # MetricCharts, MetricsTable, CycleSettingsPanel, ...
-    │   └── components/ui/    # shadcn/ui primitives (button, card, select, ...)
+    │   ├── components/       # charts, tables, CycleSettingsPanel, TeamsTable, ...
+    │   └── components/ui/    # shadcn/ui primitives (button, card, select, switch, alert-dialog, ...)
     ├── components.json       # shadcn configuration / preset
     ├── vite.config.ts        # dev proxy /api -> :8000, Tailwind, @ alias
     └── package.json
@@ -126,15 +129,18 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 3. Click **Import teams from Linear** to fetch the team list.
 4. Click **Refresh** on a team to download its **current cycle's** issues and
    membership into SQLite. Refreshing replaces the stored issues, so only the
-   active cycle is ever kept.
+   active cycle is ever kept. **Delete** removes a team and all of its local data
+   (Linear is untouched).
 5. In **Configuration → Cycle & availability**, confirm the cycle dates pulled
    from Linear, override the number of working days if the cycle contains
    holidays, tag each person as **DEV** or **QA**, untick anyone who shouldn't
    count toward capacity (non-developers, people not on this cycle), and set
    **unavailable days** (planned leave) per person.
-6. Open **Dashboard**, pick a team, and review the metric cards, charts
-   (capacity vs taken, velocity, planned vs adhoc), the **role breakdown** table
-   and the per-person table (which can be filtered by role).
+6. Open **Dashboard**, pick a team, and use the **role filter** (All / DEV / QA)
+   at the top to scope the cards, charts and tables. Review the metric cards, the
+   **velocity trend** line, the per-person charts (capacity vs taken, velocity,
+   planned vs adhoc), the **role breakdown** table, the per-person table, and the
+   **Issues** table (tick **Show done** to include completed issues).
 
 > Only issues from each team's **active cycle** are downloaded and stored. Each
 > issue records the cycle it belongs to (`cycle_id`, `cycle_name`,
@@ -183,6 +189,10 @@ Tables:
 > cycle's set, so the database only ever holds each team's current cycle. Cycle
 > settings and per-member availability/counting flags are preserved across
 > refreshes; members no longer returned by Linear are dropped.
+
+> Deleting a team removes its row and all of its child data (issues, cycle
+> settings, members, leave); its sync history is kept but detached. Linear is not
+> affected — re-import and refresh to bring the team back.
 
 ## Configuration
 
