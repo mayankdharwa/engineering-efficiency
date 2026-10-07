@@ -35,16 +35,23 @@ interface MetricChartsProps {
  * captures (definition identity is the chart's update boundary).
  */
 export function MetricCharts({ members }: MetricChartsProps) {
-  const capacityMembers = members.filter((member) => member.linear_id !== null)
-  const workingMembers = members.filter((member) => member.taken_points > 0)
+  // Charts only show people who count toward capacity; not-counted members and
+  // the synthetic "Unassigned" aggregate are excluded.
+  const counted = useMemo(
+    () => members.filter((member) => member.counts_toward_capacity),
+    [members],
+  )
+  const workingMembers = useMemo(
+    () => counted.filter((member) => member.taken_points > 0),
+    [counted],
+  )
 
   const takenVsCapacity = useMemo(() => {
-    const rows = members.filter((member) => member.linear_id !== null)
-    const capacityRows = rows.map((member) => ({
+    const capacityRows = counted.map((member) => ({
       member: member.name,
       points: member.capacity_points,
     }))
-    const takenRows = rows.map((member) => ({
+    const takenRows = counted.map((member) => ({
       member: member.name,
       points: member.taken_points,
     }))
@@ -66,12 +73,13 @@ export function MetricCharts({ members }: MetricChartsProps) {
       },
       tooltip,
     })
-  }, [members])
+  }, [counted])
 
   const velocity = useMemo(() => {
-    const rows = members
-      .filter((member) => member.taken_points > 0)
-      .map((member) => ({ member: member.name, value: member.velocity ?? 0 }))
+    const rows = workingMembers.map((member) => ({
+      member: member.name,
+      value: member.velocity ?? 0,
+    }))
     return defineChart({
       marks: [barX(rows, { x: 'value', y: 'member', fill: COLOR_TAKEN }), ruleX([1])],
       scales: {
@@ -85,15 +93,13 @@ export function MetricCharts({ members }: MetricChartsProps) {
       },
       tooltip,
     })
-  }, [members])
+  }, [workingMembers])
 
   const plannedVsAdhoc = useMemo(() => {
-    const rows = members
-      .filter((member) => member.taken_points > 0)
-      .flatMap((member) => [
-        { member: member.name, work: 'Planned', points: member.planned_points },
-        { member: member.name, work: 'Adhoc', points: member.adhoc_points },
-      ])
+    const rows = workingMembers.flatMap((member) => [
+      { member: member.name, work: 'Planned', points: member.planned_points },
+      { member: member.name, work: 'Adhoc', points: member.adhoc_points },
+    ])
     return defineChart({
       marks: [
         barX(rows, {
@@ -114,9 +120,9 @@ export function MetricCharts({ members }: MetricChartsProps) {
       },
       tooltip,
     })
-  }, [members])
+  }, [workingMembers])
 
-  if (capacityMembers.length === 0) {
+  if (counted.length === 0) {
     return <p className="text-sm text-muted-foreground">No members with cycle data yet.</p>
   }
 
@@ -132,7 +138,7 @@ export function MetricCharts({ members }: MetricChartsProps) {
         <CardContent>
           <Chart
             definition={takenVsCapacity}
-            height={chartHeight(capacityMembers.length)}
+            height={chartHeight(counted.length)}
             ariaLabel="Points taken versus capacity by member"
           />
         </CardContent>
