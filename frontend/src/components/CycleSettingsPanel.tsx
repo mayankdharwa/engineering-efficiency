@@ -37,7 +37,11 @@ import type { CycleSettingsIn, TeamOut } from '../types'
 /** Convert an ISO timestamp to the `YYYY-MM-DD` an <input type="date"> wants. */
 function toDateInput(value: string | null): string {
   if (!value) return ''
-  const date = new Date(value)
+  // Timestamps are UTC. Treat any value without a timezone as UTC so the
+  // calendar date doesn't shift a day in non-UTC timezones (browsers parse a
+  // timezone-less string as local time).
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`
+  const date = new Date(normalized)
   if (Number.isNaN(date.getTime())) return ''
   return date.toISOString().slice(0, 10)
 }

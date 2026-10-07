@@ -13,7 +13,6 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
-    DateTime,
     Float,
     ForeignKey,
     Integer,
@@ -23,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .database import Base
+from .database import Base, UTCDateTime
 
 
 def utcnow() -> datetime:
@@ -40,9 +39,9 @@ class LinearConfig(Base):
     viewer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     viewer_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     organization_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+        UTCDateTime, default=utcnow, onupdate=utcnow
     )
 
 
@@ -58,10 +57,10 @@ class Team(Base):
     issue_count: Mapped[int] = mapped_column(Integer, default=0)
     # Linear id of the cycle currently stored for this team (set on refresh).
     current_cycle_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+        UTCDateTime, default=utcnow, onupdate=utcnow
     )
 
     issues: Mapped[list[Issue]] = relationship(
@@ -100,16 +99,16 @@ class Issue(Base):
     # When Linear recorded the issue as being attached to its cycle. Used to
     # classify "adhoc" work (added after the cycle started).
     added_to_cycle_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UTCDateTime, nullable=True
     )
 
     # Linear timestamps
-    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     raw: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
@@ -129,8 +128,8 @@ class SyncRun(Base):
     status: Mapped[str] = mapped_column(String(32))  # "running" | "success" | "error"
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     issues_synced: Mapped[int] = mapped_column(Integer, default=0)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
 class CycleSettings(Base):
@@ -153,16 +152,16 @@ class CycleSettings(Base):
     cycle_id: Mapped[str] = mapped_column(String(64), index=True)
     cycle_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cycle_number: Mapped[float | None] = mapped_column(Float, nullable=True)
-    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    starts_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     # Manual override for the number of working days (e.g. holidays). Null means
     # "derive from the cycle dates".
     working_days: Mapped[float | None] = mapped_column(Float, nullable=True)
     # True once a user edits the dates, so refreshes stop overwriting them.
     dates_overridden: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+        UTCDateTime, default=utcnow, onupdate=utcnow
     )
 
 
@@ -190,7 +189,7 @@ class TeamMember(Base):
     counts_toward_capacity: Mapped[bool] = mapped_column(Boolean, default=True)
     # Optional role tag ("DEV" or "QA") used to group metrics. Null until set.
     role: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
 class MemberUnavailability(Base):
@@ -213,7 +212,7 @@ class MemberUnavailability(Base):
     cycle_id: Mapped[str] = mapped_column(String(64), index=True)
     member_linear_id: Mapped[str] = mapped_column(String(64), index=True)
     unavailable_days: Mapped[float] = mapped_column(Float, default=0.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+        UTCDateTime, default=utcnow, onupdate=utcnow
     )

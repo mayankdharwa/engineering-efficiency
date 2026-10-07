@@ -3,16 +3,46 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import DateTime, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.types import TypeDecorator
 
 from .config import DEFAULT_DATA_DIR, settings
 
 
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
+
+
+class UTCDateTime(TypeDecorator):
+    """A ``DateTime`` that always stores and returns timezone-aware UTC values.
+
+    SQLite has no native timezone support and drops ``tzinfo``, so SQLAlchemy
+    hands back naive datetimes. Browsers parse a timezone-less string as *local*
+    time, which shifts calendar dates by a day in non-UTC timezones. This
+    decorator normalises values to UTC on the way in and re-attaches UTC on the
+    way out, so the API never emits naive timestamps.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: object) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect: object) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 def _ensure_sqlite_dir(database_url: str) -> None:
