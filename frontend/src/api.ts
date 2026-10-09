@@ -70,6 +70,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  listGroups: (teamId: number) => request<GroupOut[]>(`/teams/${teamId}/groups`),
   createGroup: (teamId: number, name: string) =>
     request<GroupOut>(`/teams/${teamId}/groups`, {
       method: 'POST',

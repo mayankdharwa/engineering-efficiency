@@ -80,9 +80,10 @@ engineering-efficiency/
     │   ├── types.ts          # shared API types
     │   ├── router.tsx        # TanStack Router routes
     │   ├── index.css         # Tailwind v4 + shadcn theme tokens
-    │   ├── lib/              # formatting + table helpers
-    │   ├── pages/            # DashboardPage, ConfigPage
-    │   ├── components/       # charts, tables, CycleSettingsPanel, TeamsTable, ...
+    │   ├── lib/              # formatting, timezone + group helpers
+    │   ├── hooks/            # app settings + shared config team selection
+    │   ├── pages/            # DashboardPage, ConfigLayout (+ per-section config routes)
+    │   ├── components/       # charts, tables, LinearSetupPanel, CycleConfigurationPanel, GroupsPanel, ...
     │   └── components/ui/    # shadcn/ui primitives (button, card, select, switch, alert-dialog, ...)
     ├── components.json       # shadcn configuration / preset
     ├── vite.config.ts        # dev proxy /api -> :8000, Tailwind, @ alias
@@ -130,24 +131,28 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 
 1. Create a Linear **personal API key**: Linear → *Settings* → *Security & access*
    → *Personal API keys*.
-2. Open **Configuration**, paste the key, and click **Save & validate**. The key
-   is stored only in your local SQLite database.
-3. Click **Import teams from Linear** to fetch the team list.
-4. Click **Refresh** on a team to download its **current cycle's** issues and
-   membership into SQLite. Refreshing replaces the stored issues, so only the
-   active cycle is ever kept. **Delete** removes a team and all of its local data
-   (Linear is untouched).
-5. In **Configuration → Metrics timing**, set the **working timezone** and the
-   **hour after which the current day counts as elapsed** (default 7 PM). A day
-   is only treated as elapsed once that local time has passed, so velocity isn't
-   measured against a day that is still in progress.
-6. In **Configuration → Cycle & availability**, confirm the cycle dates pulled
-   from Linear, add as many **groups** as you need (e.g. Backend, Frontend, QA),
-   and assign each person to one of them. Override the number of working days if
-   the cycle contains holidays, untick anyone who shouldn't count toward capacity
-   (non-developers, people not on this cycle), and set **unavailable days**
-   (planned leave) per person.
-7. Open **Dashboard**, pick a team, and use the **group filter** (All groups or
+2. Open **Configuration**, pick **Linear Setup** in the side panel, paste the key,
+   and click **Save & validate**. The key is stored only in your local SQLite
+   database.
+3. Still in **Linear Setup**, click **Import teams** to fetch the team list, then
+   **Refresh** a team to download its **current cycle's** issues and membership
+   into SQLite. Refreshing replaces the stored issues, so only the active cycle is
+   ever kept. **Delete** removes a team and all of its local data (Linear is
+   untouched).
+4. In **Configuration → Time Configuration**, set the **working timezone** and
+   the **hour after which the current day counts as elapsed** (default 7 PM). A
+   day is only treated as elapsed once that local time has passed, so velocity
+   isn't measured against a day that is still in progress.
+5. In **Configuration → Cycle Configuration**, confirm the cycle dates pulled
+   from Linear and override the number of working days if the cycle contains
+   holidays.
+6. In **Configuration → Groups**, add as many **groups** as you need (e.g.
+   Backend, Frontend, QA).
+7. In **Configuration → Team Configuration**, assign each person to one of those
+   groups, untick anyone who shouldn't count toward capacity (non-developers,
+   people not on this cycle), and set **unavailable days** (planned leave) per
+   person.
+8. Open **Dashboard**, pick a team, and use the **group filter** (All groups or
    any combination) at the top to scope the cards, charts and tables. Review the
    metric cards, the **velocity trend** line, the per-person charts (capacity vs
    taken, velocity, planned vs adhoc), the **group breakdown** table, the
@@ -221,9 +226,9 @@ Backend settings are overridable via `EE_`-prefixed environment variables (see
 `backend/.env.example`), e.g. `EE_DATABASE_URL`, `EE_FRONTEND_DIST`.
 
 Metric timing — the working timezone and the hour after which the current day
-counts as elapsed — is configured in the app under **Configuration → Metrics
-timing** and stored in the `app_settings` table. The timezone is used for every
-date-based calculation and for displaying dates/times across the dashboard,
+counts as elapsed — is configured in the app under **Configuration → Time
+Configuration** and stored in the `app_settings` table. The timezone is used for
+every date-based calculation and for displaying dates/times across the dashboard,
 including the cycle start/end date pickers.
 
 ## Notes

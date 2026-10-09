@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -40,7 +40,7 @@ function timezoneOptions(current: string): string[] {
   return Array.from(options).sort()
 }
 
-export function MetricSettingsPanel() {
+export function TimeConfigurationPanel() {
   const queryClient = useQueryClient()
   const settingsQuery = useAppSettings()
   const [timezone, setTimezone] = useState('UTC')
@@ -74,19 +74,12 @@ export function MetricSettingsPanel() {
   return (
     <Card>
       <CardHeader className="border-b">
-        <CardTitle>Metrics timing</CardTitle>
+        <CardTitle>Time Configuration</CardTitle>
         <CardDescription>
           The working timezone and the local hour after which the current day counts as elapsed.
           Until that hour passes, a partial day is not counted, so velocity isn&apos;t measured
           against work that hasn&apos;t happened yet.
         </CardDescription>
-        {settingsQuery.data && (
-          <CardAction>
-            <Button type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </CardAction>
-        )}
       </CardHeader>
       <CardContent className="gap-4">
         {settingsQuery.isLoading ? (
@@ -161,6 +154,18 @@ export function MetricSettingsPanel() {
           </>
         )}
       </CardContent>
+      {settingsQuery.data && (
+        <CardFooter className="justify-end">
+          <Button
+            type="button"
+            className="min-w-32"
+            disabled={saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+          >
+            {saveMutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   )
 }
