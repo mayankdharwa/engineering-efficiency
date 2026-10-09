@@ -184,6 +184,30 @@ class CycleSettings(Base):
     )
 
 
+class MemberGroup(Base):
+    """A per-team grouping used to aggregate member metrics.
+
+    Groups are fluid: a team can add any number of them, rename them and remove
+    them. A member belongs to at most one group; unassigned members roll up
+    under an "Unassigned" bucket in the UI.
+    """
+
+    __tablename__ = "member_groups"
+    __table_args__ = (
+        UniqueConstraint("team_id", "name", name="uq_member_groups_team_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, default=utcnow, onupdate=utcnow
+    )
+
+
 class TeamMember(Base):
     """A member imported from the team's Linear membership."""
 
@@ -206,9 +230,13 @@ class TeamMember(Base):
     # Whether this member contributes capacity to the team's metrics. Defaults
     # to True for assignable, active members but can be toggled per member.
     counts_toward_capacity: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Optional role tag ("DEV" or "QA") used to group metrics. Null until set.
-    role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Optional group assignment used to aggregate metrics. Null = unassigned.
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("member_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+    group: Mapped[MemberGroup | None] = relationship()
 
 
 class MemberUnavailability(Base):

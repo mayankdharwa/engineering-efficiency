@@ -27,8 +27,8 @@ Derived per member:
 * ``bandwidth_efficiency``= ``taken / capacity``
 
 Team metrics are ratios of the team totals rather than sums of ratios.
-Members may be tagged with a role (``DEV``/``QA``); the same metrics are also
-aggregated per role so the dashboard can compare the groups.
+Members may be assigned to a per-team group; the same metrics are also
+aggregated per group so the dashboard can compare them.
 """
 
 from __future__ import annotations
@@ -41,16 +41,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .app_settings import DEFAULT_DAY_CUTOFF_HOUR, get_app_settings
-from .models import CycleSettings, Issue, MemberUnavailability, Team, TeamMember, utcnow
+from .models import (
+    CycleSettings,
+    Issue,
+    MemberGroup,
+    MemberUnavailability,
+    Team,
+    TeamMember,
+    utcnow,
+)
 
 POINTS_PER_DAY = 2.0
 DEFAULT_WORKING_DAYS = 10.0
 UNASSIGNED_LABEL = "Unassigned"
 
-# Roles a member can be tagged with. Metrics are also aggregated per role.
-ROLE_DEV = "DEV"
-ROLE_QA = "QA"
-ROLE_LABELS = {ROLE_DEV: "DEV", ROLE_QA: "QA", None: "Unspecified"}
+# Label for real members who have not been assigned to any group.
+UNGROUPED_LABEL = "Unassigned"
 
 
 def _to_local(value: datetime, tz: ZoneInfo) -> datetime:
@@ -153,7 +159,8 @@ class MemberMetrics:
     linear_id: str | None
     name: str
     email: str | None
-    role: str | None
+    group_id: int | None
+    group_name: str | None
     counts_toward_capacity: bool
     unavailable_days: float
     capacity_points: float
@@ -179,10 +186,10 @@ class VelocityTrendPoint:
 
 
 @dataclass
-class RoleMetrics:
-    """Team metrics aggregated over the members sharing a role tag."""
+class GroupMetrics:
+    """Team metrics aggregated over the members sharing a group."""
 
-    role: str | None
+    group_id: int | None
     label: str
     members: int
     capacity_points: float
@@ -221,7 +228,7 @@ class TeamMetrics:
     velocity: float | None = None
     bandwidth_efficiency: float | None = None
     members: list[MemberMetrics] = field(default_factory=list)
-    roles: list[RoleMetrics] = field(default_factory=list)
+    groups: list[GroupMetrics] = field(default_factory=list)
     velocity_trend: list[VelocityTrendPoint] = field(default_factory=list)
 
 
@@ -280,6 +287,14 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
     members = list(
         db.scalars(select(TeamMember).where(TeamMember.team_id == team.id)).all()
     )
+    groups = list(
+        db.scalars(
+            select(MemberGroup)
+            .where(MemberGroup.team_id == team.id)
+            .order_by(MemberGroup.id)
+        ).all()
+    )
+    group_name_by_id = {group.id: group.name for group in groups}
     overrides = {
         row.member_linear_id: row.unavailable_days
         for row in db.scalars(
@@ -326,12 +341,18 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
             (member.display_name or member.name) if member else None
         ) or bucket.name or linear_id
         counts = bool(member.counts_toward_capacity) if member else False
+        member_group_id = member.group_id if member else None
         rows.append(
             _build_member_metrics(
                 linear_id=linear_id,
                 name=name,
                 email=member.email if member else None,
-                role=member.role if member else None,
+                group_id=member_group_id,
+                group_name=(
+                    group_name_by_id.get(member_group_id)
+                    if member_group_id is not None
+                    else None
+                ),
                 # Only members opted into capacity get the full allowance;
                 # assignees outside the team count their work but no capacity.
                 counts_toward_capacity=counts,
@@ -349,6 +370,8 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
                 linear_id=None,
                 name=UNASSIGNED_LABEL,
                 email=None,
+                group_id=None,
+                group_name=None,
                 counts_toward_capacity=False,
                 unavailable=0.0,
                 working_days=working_days,
@@ -360,13 +383,13 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
 
     rows.sort(key=lambda row: (row.linear_id is None, row.name.lower()))
 
-    # Aggregate the per-person rows by role tag. Unassigned work (the synthetic
+    # Aggregate the per-person rows by group. Unassigned work (the synthetic
     # row) is excluded so the groups only reflect real members.
-    role_groups: dict[str | None, list[MemberMetrics]] = {}
+    grouped: dict[int | None, list[MemberMetrics]] = {}
     for row in rows:
         if row.linear_id is None:
             continue
-        role_groups.setdefault(row.role, []).append(row)
+        grouped.setdefault(row.group_id, []).append(row)
 
     def _trend_for(group: list[MemberMetrics]) -> list[VelocityTrendPoint]:
         member_ids = {row.linear_id for row in group if row.linear_id is not None}
@@ -383,14 +406,26 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
             cutoff_hour,
         )
 
-    role_rows: list[RoleMetrics] = []
-    for role in (ROLE_DEV, ROLE_QA):
-        group = role_groups.get(role, [])
-        role_rows.append(_build_role_metrics(role, group, progress, _trend_for(group)))
-    unspecified = role_groups.get(None, [])
-    if unspecified:
-        role_rows.append(
-            _build_role_metrics(None, unspecified, progress, _trend_for(unspecified))
+    # One row per defined group (in creation order), plus an "Unassigned" row
+    # for real members who are not in any group.
+    group_rows: list[GroupMetrics] = []
+    for group in groups:
+        members_in_group = grouped.get(group.id, [])
+        group_rows.append(
+            _build_group_metrics(
+                group.id,
+                group.name,
+                members_in_group,
+                progress,
+                _trend_for(members_in_group),
+            )
+        )
+    ungrouped = grouped.get(None, [])
+    if ungrouped:
+        group_rows.append(
+            _build_group_metrics(
+                None, UNGROUPED_LABEL, ungrouped, progress, _trend_for(ungrouped)
+            )
         )
 
     velocity_trend = _velocity_trend(
@@ -431,7 +466,7 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
         velocity=_ratio(total_done, progress * total_taken),
         bandwidth_efficiency=_ratio(total_taken, total_capacity),
         members=rows,
-        roles=role_rows,
+        groups=group_rows,
         velocity_trend=velocity_trend,
     )
 
@@ -516,21 +551,22 @@ def _velocity_trend(
     return points
 
 
-def _build_role_metrics(
-    role: str | None,
+def _build_group_metrics(
+    group_id: int | None,
+    label: str,
     group: list[MemberMetrics],
     progress: float,
     velocity_trend: list[VelocityTrendPoint] | None = None,
-) -> RoleMetrics:
-    """Aggregate member rows sharing a role into a team-style ratio of totals."""
+) -> GroupMetrics:
+    """Aggregate member rows in a group into a team-style ratio of totals."""
     taken = sum(row.taken_points for row in group)
     done = sum(row.done_points for row in group)
     adhoc = sum(row.adhoc_points for row in group)
     planned = sum(row.planned_points for row in group)
     capacity = sum(row.capacity_points for row in group)
-    return RoleMetrics(
-        role=role,
-        label=ROLE_LABELS.get(role, role or "Unspecified"),
+    return GroupMetrics(
+        group_id=group_id,
+        label=label,
         members=len(group),
         capacity_points=capacity,
         taken_points=taken,
@@ -550,7 +586,8 @@ def _build_member_metrics(
     linear_id: str | None,
     name: str,
     email: str | None,
-    role: str | None = None,
+    group_id: int | None = None,
+    group_name: str | None = None,
     counts_toward_capacity: bool = True,
     unavailable: float,
     working_days: float,
@@ -565,7 +602,8 @@ def _build_member_metrics(
         linear_id=linear_id,
         name=name,
         email=email,
-        role=role,
+        group_id=group_id,
+        group_name=group_name,
         counts_toward_capacity=counts_toward_capacity,
         unavailable_days=unavailable,
         capacity_points=capacity_points,

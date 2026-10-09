@@ -1,5 +1,7 @@
-/** Role filter shared by the dashboard controls and the role-aware tables. */
-export type RoleFilter = 'all' | 'DEV' | 'QA'
+export interface GroupOut {
+  id: number
+  name: string
+}
 
 export interface LinearConfigOut {
   configured: boolean
@@ -62,7 +64,8 @@ export interface MemberMetricsOut {
   linear_id: string | null
   name: string
   email: string | null
-  role: string | null
+  group_id: number | null
+  group_name: string | null
   counts_toward_capacity: boolean
   unavailable_days: number
   capacity_points: number
@@ -84,8 +87,8 @@ export interface VelocityTrendPointOut {
   velocity: number | null
 }
 
-export interface RoleMetricsOut {
-  role: string | null
+export interface GroupMetricsOut {
+  group_id: number | null
   label: string
   members: number
   capacity_points: number
@@ -124,7 +127,7 @@ export interface TeamStatsOut {
   velocity: number | null
   bandwidth_efficiency: number | null
   members: MemberMetricsOut[]
-  roles: RoleMetricsOut[]
+  groups: GroupMetricsOut[]
   velocity_trend: VelocityTrendPointOut[]
 }
 
@@ -132,7 +135,8 @@ export interface CycleMemberOut {
   linear_id: string
   name: string
   email: string | null
-  role: string | null
+  group_id: number | null
+  group_name: string | null
   unavailable_days: number
   counts_toward_capacity: boolean
 }
@@ -150,6 +154,7 @@ export interface CycleSettingsOut {
   default_working_days: number
   working_days_overridden: boolean
   points_per_day: number
+  groups: GroupOut[]
   members: CycleMemberOut[]
 }
 
@@ -157,7 +162,7 @@ export interface CycleMemberAvailabilityIn {
   linear_id: string
   unavailable_days: number
   counts_toward_capacity?: boolean
-  role?: string | null
+  group_id?: number | null
 }
 
 export interface CycleSettingsIn {

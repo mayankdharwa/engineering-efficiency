@@ -3,6 +3,7 @@ import type {
   ConnectionTestOut,
   CycleSettingsIn,
   CycleSettingsOut,
+  GroupOut,
   IssueOut,
   LinearConfigOut,
   RefreshResult,
@@ -68,4 +69,17 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
+
+  createGroup: (teamId: number, name: string) =>
+    request<GroupOut>(`/teams/${teamId}/groups`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  renameGroup: (teamId: number, groupId: number, name: string) =>
+    request<GroupOut>(`/teams/${teamId}/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+  deleteGroup: (teamId: number, groupId: number) =>
+    request<void>(`/teams/${teamId}/groups/${groupId}`, { method: 'DELETE' }),
 }

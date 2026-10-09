@@ -1,22 +1,23 @@
 import { createColumnHelper } from '@tanstack/react-table'
+import { selectGroups } from '../lib/groups'
 import { formatPoints } from '../lib/format'
 import { appTableFeatures } from '../lib/table'
-import type { RoleFilter, RoleMetricsOut } from '../types'
+import type { GroupMetricsOut } from '../types'
 import { DataTable, type AppColumnDef } from './DataTable'
+import { GroupBadge } from './GroupBadge'
 import { PercentCell } from './PercentCell'
-import { RoleBadge } from './RoleBadge'
 
-const helper = createColumnHelper<typeof appTableFeatures, RoleMetricsOut>()
+const helper = createColumnHelper<typeof appTableFeatures, GroupMetricsOut>()
 
-const columns: AppColumnDef<RoleMetricsOut>[] = [
+const columns: AppColumnDef<GroupMetricsOut>[] = [
   helper.accessor('label', {
-    header: 'Role',
+    header: 'Group',
     cell: (ctx) => {
       const row = ctx.row.original
-      if (row.role === null) {
+      if (row.group_id === null) {
         return <span className="text-muted-foreground">{row.label}</span>
       }
-      return <RoleBadge role={row.role} />
+      return <GroupBadge name={row.label} />
     },
   }),
   helper.accessor('members', {
@@ -49,19 +50,17 @@ const columns: AppColumnDef<RoleMetricsOut>[] = [
   }),
 ]
 
-interface RoleMetricsTableProps {
-  roles: RoleMetricsOut[]
-  role: RoleFilter
+interface GroupMetricsTableProps {
+  groups: GroupMetricsOut[]
+  selected: Set<string>
 }
 
-export function RoleMetricsTable({ roles, role }: RoleMetricsTableProps) {
-  const filtered = role === 'all' ? roles : roles.filter((row) => row.role === role)
-
+export function GroupMetricsTable({ groups, selected }: GroupMetricsTableProps) {
   return (
     <DataTable
       columns={columns}
-      data={filtered}
-      emptyMessage="Tag members as DEV or QA in Configuration to see role totals."
+      data={selectGroups(groups, selected)}
+      emptyMessage="Add groups and assign members in Configuration to see group totals."
     />
   )
 }

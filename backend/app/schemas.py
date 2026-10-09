@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -94,7 +93,8 @@ class MemberMetricsOut(BaseModel):
     linear_id: str | None = None
     name: str
     email: str | None = None
-    role: str | None = None
+    group_id: int | None = None
+    group_name: str | None = None
     counts_toward_capacity: bool = True
     unavailable_days: float
     capacity_points: float
@@ -116,8 +116,8 @@ class VelocityTrendPointOut(BaseModel):
     velocity: float | None = None
 
 
-class RoleMetricsOut(BaseModel):
-    role: str | None = None
+class GroupMetricsOut(BaseModel):
+    group_id: int | None = None
     label: str
     members: int
     capacity_points: float
@@ -156,15 +156,27 @@ class TeamStatsOut(BaseModel):
     velocity: float | None = None
     bandwidth_efficiency: float | None = None
     members: list[MemberMetricsOut] = []
-    roles: list[RoleMetricsOut] = []
+    groups: list[GroupMetricsOut] = []
     velocity_trend: list[VelocityTrendPointOut] = []
+
+
+class GroupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
+class GroupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
 
 
 class CycleMemberOut(BaseModel):
     linear_id: str
     name: str
     email: str | None = None
-    role: str | None = None
+    group_id: int | None = None
+    group_name: str | None = None
     unavailable_days: float
     counts_toward_capacity: bool = True
 
@@ -182,6 +194,7 @@ class CycleSettingsOut(BaseModel):
     default_working_days: float
     working_days_overridden: bool
     points_per_day: float
+    groups: list[GroupOut] = []
     members: list[CycleMemberOut] = []
 
 
@@ -189,7 +202,7 @@ class CycleMemberAvailabilityIn(BaseModel):
     linear_id: str
     unavailable_days: float = Field(default=0, ge=0, le=60)
     counts_toward_capacity: bool | None = None
-    role: Literal["DEV", "QA"] | None = None
+    group_id: int | None = None
 
 
 class CycleSettingsIn(BaseModel):

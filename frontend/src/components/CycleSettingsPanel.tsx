@@ -34,15 +34,12 @@ import { api } from '../api'
 import { useTimezone } from '../hooks/useAppSettings'
 import { formatCycle } from '../lib/format'
 import { isoDateInTimeZone, zonedDateToUtcIso } from '../lib/timezone'
-import type { CycleSettingsIn, TeamOut } from '../types'
+import type { CycleSettingsIn, GroupOut, TeamOut } from '../types'
 
-type RoleValue = 'unset' | 'DEV' | 'QA'
+/** Sentinel Select value for "no group". */
+const NO_GROUP = 'unset'
 
-const ROLE_OPTIONS: { label: string; value: RoleValue }[] = [
-  { label: 'Not set', value: 'unset' },
-  { label: 'DEV', value: 'DEV' },
-  { label: 'QA', value: 'QA' },
-]
+type Feedback = { type: 'success' | 'error'; message: string }
 
 export function CycleSettingsPanel() {
   const queryClient = useQueryClient()
@@ -71,10 +68,12 @@ export function CycleSettingsPanel() {
   const [endDate, setEndDate] = useState('')
   const [availability, setAvailability] = useState<Record<string, string>>({})
   const [counts, setCounts] = useState<Record<string, boolean>>({})
-  const [roles, setRoles] = useState<Record<string, RoleValue>>({})
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
-    null,
-  )
+  // Member group assignment, keyed by linear id; value is a group id or NO_GROUP.
+  const [assignments, setAssignments] = useState<Record<string, string>>({})
+  // Draft text for renaming each group, keyed by group id.
+  const [groupDrafts, setGroupDrafts] = useState<Record<number, string>>({})
+  const [newGroupName, setNewGroupName] = useState('')
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
 
   useEffect(() => {
     const data = cycleQuery.data
@@ -84,15 +83,19 @@ export function CycleSettingsPanel() {
     setEndDate(isoDateInTimeZone(data.ends_at, timezone))
     const next: Record<string, string> = {}
     const nextCounts: Record<string, boolean> = {}
-    const nextRoles: Record<string, RoleValue> = {}
+    const nextAssignments: Record<string, string> = {}
     for (const member of data.members) {
       next[member.linear_id] = String(member.unavailable_days)
       nextCounts[member.linear_id] = member.counts_toward_capacity
-      nextRoles[member.linear_id] = (member.role as RoleValue | null) ?? 'unset'
+      nextAssignments[member.linear_id] =
+        member.group_id === null ? NO_GROUP : String(member.group_id)
     }
     setAvailability(next)
     setCounts(nextCounts)
-    setRoles(nextRoles)
+    setAssignments(nextAssignments)
+    setGroupDrafts(
+      Object.fromEntries(data.groups.map((group) => [group.id, group.name])),
+    )
   }, [cycleQuery.data, timezone])
 
   const saveMutation = useMutation({
@@ -106,18 +109,54 @@ export function CycleSettingsPanel() {
     onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
   })
 
+  const createGroup = useMutation({
+    mutationFn: (name: string) => api.createGroup(teamId as number, name),
+    onSuccess: (group) => {
+      setNewGroupName('')
+      setFeedback({ type: 'success', message: `Added group '${group.name}'.` })
+      queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
+      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+    },
+    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+  })
+
+  const renameGroup = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) =>
+      api.renameGroup(teamId as number, id, name),
+    onSuccess: (group) => {
+      setFeedback({ type: 'success', message: `Renamed group to '${group.name}'.` })
+      queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
+      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+    },
+    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+  })
+
+  const deleteGroup = useMutation({
+    mutationFn: (id: number) => api.deleteGroup(teamId as number, id),
+    onSuccess: () => {
+      setFeedback({ type: 'success', message: 'Group deleted; members were unassigned.' })
+      queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
+      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+    },
+    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+  })
+
   const cycle = cycleQuery.data
+  const groups: GroupOut[] = cycle?.groups ?? []
 
   function handleSave() {
     if (!cycle) return
     const parsed = Number(workingDays)
     const payload: CycleSettingsIn = {
-      members: cycle.members.map((member) => ({
-        linear_id: member.linear_id,
-        unavailable_days: Number(availability[member.linear_id] || 0),
-        counts_toward_capacity: counts[member.linear_id] ?? true,
-        role: (roles[member.linear_id] ?? 'unset') === 'unset' ? null : roles[member.linear_id],
-      })),
+      members: cycle.members.map((member) => {
+        const assigned = assignments[member.linear_id] ?? NO_GROUP
+        return {
+          linear_id: member.linear_id,
+          unavailable_days: Number(availability[member.linear_id] || 0),
+          counts_toward_capacity: counts[member.linear_id] ?? true,
+          group_id: assigned === NO_GROUP ? null : Number(assigned),
+        }
+      }),
     }
     if (workingDays.trim().length > 0 && !Number.isNaN(parsed)) {
       payload.working_days = parsed
@@ -126,6 +165,11 @@ export function CycleSettingsPanel() {
     if (endDate) payload.ends_at = zonedDateToUtcIso(endDate, timezone)
     saveMutation.mutate(payload)
   }
+
+  const groupItems = [
+    { label: 'Not set', value: NO_GROUP },
+    ...groups.map((group) => ({ label: group.name, value: String(group.id) })),
+  ]
 
   return (
     <Card>
@@ -247,12 +291,93 @@ export function CycleSettingsPanel() {
 
                 <div className="space-y-3">
                   <div>
+                    <h3 className="text-sm font-medium">Groups</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Add any number of groups, then assign each person to one of them. Group totals
+                      drive the dashboard&apos;s group breakdown and filter.
+                    </p>
+                  </div>
+
+                  {groups.length > 0 && (
+                    <div className="space-y-2">
+                      {groups.map((group) => {
+                        const draft = groupDrafts[group.id] ?? group.name
+                        const changed = draft.trim() !== group.name
+                        return (
+                          <div key={group.id} className="flex flex-wrap items-center gap-2">
+                            <Input
+                              className="h-8 max-w-xs"
+                              value={draft}
+                              aria-label={`Name for group ${group.name}`}
+                              onChange={(event) =>
+                                setGroupDrafts((prev) => ({
+                                  ...prev,
+                                  [group.id]: event.target.value,
+                                }))
+                              }
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={!changed || draft.trim().length === 0 || renameGroup.isPending}
+                              onClick={() =>
+                                renameGroup.mutate({ id: group.id, name: draft.trim() })
+                              }
+                            >
+                              Rename
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              disabled={deleteGroup.isPending}
+                              onClick={() => deleteGroup.mutate(group.id)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      className="h-8 max-w-xs"
+                      placeholder="New group name"
+                      value={newGroupName}
+                      aria-label="New group name"
+                      onChange={(event) => setNewGroupName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && newGroupName.trim().length > 0) {
+                          event.preventDefault()
+                          createGroup.mutate(newGroupName.trim())
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={newGroupName.trim().length === 0 || createGroup.isPending}
+                      onClick={() => createGroup.mutate(newGroupName.trim())}
+                    >
+                      Add group
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <div>
                     <h3 className="text-sm font-medium">Members</h3>
                     <p className="text-sm text-muted-foreground">
-                      Tag each person as DEV or QA to group the dashboard metrics by role. Untick
-                      anyone who shouldn&apos;t count toward capacity (e.g. non-developers or people
-                      not on this cycle). Unavailable days (planned leave) reduce a person&apos;s
-                      capacity.
+                      Assign each person to a group and untick anyone who shouldn&apos;t count toward
+                      capacity (e.g. non-developers or people not on this cycle). Unavailable days
+                      (planned leave) reduce a person&apos;s capacity.
                     </p>
                   </div>
                   <div className="overflow-hidden rounded-lg border">
@@ -261,7 +386,7 @@ export function CycleSettingsPanel() {
                         <TableRow className="hover:bg-transparent">
                           <TableHead>Member</TableHead>
                           <TableHead>Email</TableHead>
-                          <TableHead className="w-32">Role</TableHead>
+                          <TableHead className="w-40">Group</TableHead>
                           <TableHead className="w-44">Counts toward capacity</TableHead>
                           <TableHead className="w-40">Unavailable days</TableHead>
                         </TableRow>
@@ -293,29 +418,26 @@ export function CycleSettingsPanel() {
                                 </TableCell>
                                 <TableCell>
                                   <Select
-                                    items={ROLE_OPTIONS.map((option) => ({
-                                      label: option.label,
-                                      value: option.value,
-                                    }))}
-                                    value={roles[member.linear_id] ?? 'unset'}
+                                    items={groupItems}
+                                    value={assignments[member.linear_id] ?? NO_GROUP}
                                     onValueChange={(value) =>
-                                      setRoles((prev) => ({
+                                      setAssignments((prev) => ({
                                         ...prev,
-                                        [member.linear_id]: value as RoleValue,
+                                        [member.linear_id]: value as string,
                                       }))
                                     }
                                   >
                                     <SelectTrigger
                                       size="sm"
                                       className="w-full"
-                                      aria-label={`Role for ${member.name}`}
+                                      aria-label={`Group for ${member.name}`}
                                     >
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {ROLE_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          {option.label}
+                                      {groupItems.map((item) => (
+                                        <SelectItem key={item.value} value={item.value}>
+                                          {item.label}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>

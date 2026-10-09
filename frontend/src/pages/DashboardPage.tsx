@@ -22,12 +22,18 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '../api'
+import { GroupFilterSelect } from '../components/GroupFilterSelect'
+import { GroupMetricsTable } from '../components/GroupMetricsTable'
 import { IssuesTable } from '../components/IssuesTable'
 import { MetricCharts } from '../components/MetricCharts'
 import { MetricsTable } from '../components/MetricsTable'
-import { RoleMetricsTable } from '../components/RoleMetricsTable'
 import { VelocityTrendChart } from '../components/VelocityTrendChart'
 import { useTimezone } from '../hooks/useAppSettings'
+import {
+  combineGroups,
+  filterMembers,
+  isAllGroups,
+} from '../lib/groups'
 import {
   formatCycle,
   formatDate,
@@ -35,7 +41,7 @@ import {
   formatPoints,
   formatRelative,
 } from '../lib/format'
-import type { RoleFilter } from '../types'
+import type { GroupOut } from '../types'
 
 function StatCard({
   label,
@@ -59,17 +65,11 @@ function StatCard({
   )
 }
 
-const ROLE_FILTERS: { label: string; value: RoleFilter }[] = [
-  { label: 'All roles', value: 'all' },
-  { label: 'DEV', value: 'DEV' },
-  { label: 'QA', value: 'QA' },
-]
-
 export function DashboardPage() {
   const queryClient = useQueryClient()
   const timezone = useTimezone()
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
   const [showDone, setShowDone] = useState(false)
 
   const teamsQuery = useQuery({ queryKey: ['teams'], queryFn: api.listTeams })
@@ -85,6 +85,11 @@ export function DashboardPage() {
   }, [selectedTeamId, teams])
 
   const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null
+
+  // Group ids are team-specific, so clear the filter when the team changes.
+  useEffect(() => {
+    setSelectedGroups(new Set())
+  }, [selectedTeamId])
 
   const issuesQuery = useQuery({
     queryKey: ['issues', selectedTeamId],
@@ -109,38 +114,37 @@ export function DashboardPage() {
   })
 
   const stats = statsQuery.data
+  const allGroups = isAllGroups(selectedGroups)
 
-  // Charts show only the selected role's members (or everyone for "all").
-  const chartMembers =
-    roleFilter === 'all'
-      ? (stats?.members ?? [])
-      : (stats?.members ?? []).filter((member) => member.role === roleFilter)
+  // When specific groups are selected, combine their precomputed totals using
+  // the same ratio-of-totals logic the backend uses for the team.
+  const groupSummary =
+    stats && !allGroups ? combineGroups(stats.groups, selectedGroups, stats.progress) : null
 
-  // When a specific role is selected, the headline cards summarise that role
-  // (the same ratio-of-totals logic the backend uses for the team).
-  const roleTotals =
-    roleFilter === 'all'
-      ? null
-      : (stats?.roles.find((entry) => entry.role === roleFilter) ?? null)
-  const summary = {
-    planning: roleTotals ? roleTotals.planning_efficiency : (stats?.planning_efficiency ?? null),
-    velocity: roleTotals ? roleTotals.velocity : (stats?.velocity ?? null),
-    bandwidth: roleTotals
-      ? roleTotals.bandwidth_efficiency
-      : (stats?.bandwidth_efficiency ?? null),
-    planned: roleTotals ? roleTotals.planned_points : (stats?.total_planned_points ?? 0),
-    taken: roleTotals ? roleTotals.taken_points : (stats?.total_taken_points ?? 0),
-    done: roleTotals ? roleTotals.done_points : (stats?.total_done_points ?? 0),
-    capacity: roleTotals ? roleTotals.capacity_points : (stats?.total_capacity_points ?? 0),
-    adhoc: roleTotals ? roleTotals.adhoc_points : (stats?.total_adhoc_points ?? 0),
-    unestimated: roleTotals ? roleTotals.unestimated_count : (stats?.unestimated_issues ?? 0),
-  }
+  // Charts show only the selected groups' members (or everyone for "All").
+  const chartMembers = filterMembers(stats?.members ?? [], selectedGroups)
 
-  // The trend follows the same role selection as the cards and charts.
-  const velocityTrend =
-    roleFilter === 'all'
-      ? (stats?.velocity_trend ?? [])
-      : (stats?.roles.find((entry) => entry.role === roleFilter)?.velocity_trend ?? [])
+  const summary = groupSummary
+    ? groupSummary
+    : {
+        planning: stats?.planning_efficiency ?? null,
+        velocity: stats?.velocity ?? null,
+        bandwidth: stats?.bandwidth_efficiency ?? null,
+        planned: stats?.total_planned_points ?? 0,
+        taken: stats?.total_taken_points ?? 0,
+        done: stats?.total_done_points ?? 0,
+        capacity: stats?.total_capacity_points ?? 0,
+        adhoc: stats?.total_adhoc_points ?? 0,
+        unestimated: stats?.unestimated_issues ?? 0,
+      }
+
+  // The trend follows the same group selection as the cards and charts.
+  const velocityTrend = groupSummary ? groupSummary.trend : (stats?.velocity_trend ?? [])
+
+  // Defined groups (everything except the synthetic Unassigned bucket).
+  const groupOptions: GroupOut[] = (stats?.groups ?? [])
+    .filter((group) => group.group_id !== null)
+    .map((group) => ({ id: group.group_id as number, name: group.label }))
 
   return (
     <div className="flex flex-col gap-6">
@@ -191,26 +195,12 @@ export function DashboardPage() {
                   </p>
                 )}
               </div>
-              <div className="w-36 shrink-0">
-                <Select
-                  items={ROLE_FILTERS.map((option) => ({
-                    label: option.label,
-                    value: option.value,
-                  }))}
-                  value={roleFilter}
-                  onValueChange={(value) => setRoleFilter(value as RoleFilter)}
-                >
-                  <SelectTrigger id="role-select" className="w-full" aria-label="Role">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ROLE_FILTERS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="w-44 shrink-0">
+                <GroupFilterSelect
+                  groups={groupOptions}
+                  selected={selectedGroups}
+                  onChange={setSelectedGroups}
+                />
               </div>
               <Button
                 type="button"
@@ -297,13 +287,13 @@ export function DashboardPage() {
 
               <Card>
                 <CardHeader className="border-b">
-                  <CardTitle>Role breakdown</CardTitle>
+                  <CardTitle>Group breakdown</CardTitle>
                   <CardDescription>
-                    Team totals grouped by role tag. Tag members as DEV or QA in Configuration.
+                    Team totals grouped by member group. Add and assign groups in Configuration.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <RoleMetricsTable roles={stats.roles} role={roleFilter} />
+                  <GroupMetricsTable groups={stats.groups} selected={selectedGroups} />
                 </CardContent>
               </Card>
 
@@ -315,7 +305,7 @@ export function DashboardPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <MetricsTable members={stats.members} role={roleFilter} />
+                  <MetricsTable members={stats.members} selected={selectedGroups} />
                 </CardContent>
               </Card>
             </>

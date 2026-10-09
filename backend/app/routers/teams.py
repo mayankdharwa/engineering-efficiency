@@ -13,6 +13,7 @@ from ..metrics import compute_team_metrics, get_cycle_settings, weekdays_between
 from ..models import (
     CycleSettings,
     Issue,
+    MemberGroup,
     MemberUnavailability,
     SyncRun,
     Team,
@@ -22,6 +23,8 @@ from ..schemas import (
     CycleMemberOut,
     CycleSettingsIn,
     CycleSettingsOut,
+    GroupIn,
+    GroupOut,
     IssueOut,
     RefreshResult,
     SyncRunOut,
@@ -113,7 +116,7 @@ def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
 
     Linear itself is untouched: the team can be re-imported and refreshed
     later, but its cycle configuration (dates, working days, member
-    roles/leave) is lost.
+    groups/leave) is lost.
     """
     team = _get_team_or_404(db, team_id)
     # SQLite foreign-key cascades are not enabled, so clear the child rows
@@ -121,6 +124,7 @@ def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
     db.execute(delete(Issue).where(Issue.team_id == team_id))
     db.execute(delete(CycleSettings).where(CycleSettings.team_id == team_id))
     db.execute(delete(TeamMember).where(TeamMember.team_id == team_id))
+    db.execute(delete(MemberGroup).where(MemberGroup.team_id == team_id))
     db.execute(
         delete(MemberUnavailability).where(MemberUnavailability.team_id == team_id)
     )
@@ -187,6 +191,15 @@ def _cycle_out(db: Session, team: Team) -> CycleSettingsOut:
     )
     members.sort(key=lambda member: (member.display_name or member.name or "").lower())
 
+    groups = list(
+        db.scalars(
+            select(MemberGroup)
+            .where(MemberGroup.team_id == team.id)
+            .order_by(MemberGroup.id)
+        ).all()
+    )
+    group_name_by_id = {group.id: group.name for group in groups}
+
     return CycleSettingsOut(
         team_id=team.id,
         ready=metrics.ready,
@@ -200,12 +213,18 @@ def _cycle_out(db: Session, team: Team) -> CycleSettingsOut:
         default_working_days=metrics.default_working_days,
         working_days_overridden=metrics.working_days_overridden,
         points_per_day=metrics.points_per_day,
+        groups=[GroupOut.model_validate(group) for group in groups],
         members=[
             CycleMemberOut(
                 linear_id=member.linear_id,
                 name=member.display_name or member.name or member.linear_id,
                 email=member.email,
-                role=member.role,
+                group_id=member.group_id,
+                group_name=(
+                    group_name_by_id.get(member.group_id)
+                    if member.group_id is not None
+                    else None
+                ),
                 unavailable_days=overrides.get(member.linear_id, 0.0),
                 counts_toward_capacity=bool(member.counts_toward_capacity),
             )
@@ -253,6 +272,10 @@ def update_cycle_settings(
         else:
             settings.working_days = payload.working_days
 
+    valid_group_ids = set(
+        db.scalars(select(MemberGroup.id).where(MemberGroup.team_id == team.id)).all()
+    )
+
     for entry in payload.members:
         member = db.scalar(
             select(TeamMember).where(
@@ -262,10 +285,15 @@ def update_cycle_settings(
         )
         if member is not None and entry.counts_toward_capacity is not None:
             member.counts_toward_capacity = entry.counts_toward_capacity
-        # `role` may legitimately be null (clearing a tag), so only touch it when
-        # the client actually sent the field.
-        if member is not None and "role" in entry.model_fields_set:
-            member.role = entry.role
+        # `group_id` may legitimately be null (clearing the assignment), so only
+        # touch it when the client actually sent the field.
+        if member is not None and "group_id" in entry.model_fields_set:
+            if entry.group_id is not None and entry.group_id not in valid_group_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Group {entry.group_id} does not belong to this team.",
+                )
+            member.group_id = entry.group_id
 
         row = db.scalar(
             select(MemberUnavailability).where(
@@ -289,3 +317,102 @@ def update_cycle_settings(
 
     db.commit()
     return _cycle_out(db, team)
+
+
+# ---------------------------------------------------------------------------
+# Member groups (per team, fluid)
+# ---------------------------------------------------------------------------
+
+
+def _group_or_404(db: Session, team_id: int, group_id: int) -> MemberGroup:
+    group = db.get(MemberGroup, group_id)
+    if group is None or group.team_id != team_id:
+        raise HTTPException(status_code=404, detail=f"Group {group_id} not found.")
+    return group
+
+
+@router.get("/{team_id}/groups", response_model=list[GroupOut])
+def list_groups(team_id: int, db: Session = Depends(get_db)) -> list[MemberGroup]:
+    """All groups defined for a team, in creation order."""
+    _get_team_or_404(db, team_id)
+    return list(
+        db.scalars(
+            select(MemberGroup)
+            .where(MemberGroup.team_id == team_id)
+            .order_by(MemberGroup.id)
+        ).all()
+    )
+
+
+@router.post("/{team_id}/groups", response_model=GroupOut, status_code=201)
+def create_group(
+    team_id: int, payload: GroupIn, db: Session = Depends(get_db)
+) -> MemberGroup:
+    """Add a group to a team."""
+    team = _get_team_or_404(db, team_id)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Group name cannot be blank.")
+    existing = db.scalar(
+        select(MemberGroup).where(
+            MemberGroup.team_id == team.id, MemberGroup.name == name
+        )
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=400, detail=f"Group '{name}' already exists for this team."
+        )
+
+    group = MemberGroup(team_id=team.id, name=name)
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+@router.put("/{team_id}/groups/{group_id}", response_model=GroupOut)
+def rename_group(
+    team_id: int,
+    group_id: int,
+    payload: GroupIn,
+    db: Session = Depends(get_db),
+) -> MemberGroup:
+    """Rename a team's group."""
+    _get_team_or_404(db, team_id)
+    group = _group_or_404(db, team_id, group_id)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Group name cannot be blank.")
+    clash = db.scalar(
+        select(MemberGroup).where(
+            MemberGroup.team_id == team_id,
+            MemberGroup.name == name,
+            MemberGroup.id != group_id,
+        )
+    )
+    if clash is not None:
+        raise HTTPException(
+            status_code=400, detail=f"Group '{name}' already exists for this team."
+        )
+
+    group.name = name
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+@router.delete("/{team_id}/groups/{group_id}", status_code=204)
+def delete_group(
+    team_id: int, group_id: int, db: Session = Depends(get_db)
+) -> Response:
+    """Remove a group, unassigning any members that belonged to it."""
+    _get_team_or_404(db, team_id)
+    group = _group_or_404(db, team_id, group_id)
+    db.execute(
+        update(TeamMember)
+        .where(TeamMember.group_id == group.id)
+        .values(group_id=None)
+    )
+    db.delete(group)
+    db.commit()
+    return Response(status_code=204)

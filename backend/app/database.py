@@ -6,7 +6,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import DateTime, create_engine
+from sqlalchemy import DateTime, Engine, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.types import TypeDecorator
 
@@ -82,6 +82,59 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _add_missing_sqlite_columns()
+    _migrate_member_roles_to_groups()
+
+
+def _migrate_member_roles_to_groups(target_engine: Engine | None = None) -> None:
+    """Turn legacy per-member DEV/QA role tags into per-team groups.
+
+    Earlier versions stored a free-text ``role`` directly on ``team_members``.
+    Groups are now rows in ``member_groups`` with a ``group_id`` reference, so
+    on an existing SQLite database we create a group per distinct role and
+    reassign members. Clearing ``role`` afterwards keeps this idempotent.
+    """
+    migration_engine = target_engine or engine
+    if migration_engine.dialect.name != "sqlite":
+        return
+
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(migration_engine)
+    columns = {column["name"] for column in inspector.get_columns("team_members")}
+    if "role" not in columns or "group_id" not in columns:
+        return
+
+    with migration_engine.begin() as connection:
+        rows = connection.execute(
+            text("SELECT id, team_id, role FROM team_members WHERE role IS NOT NULL")
+        ).fetchall()
+        if not rows:
+            return
+
+        for member_id, team_id, role in rows:
+            connection.execute(
+                text(
+                    "INSERT OR IGNORE INTO member_groups "
+                    "(team_id, name, created_at, updated_at) "
+                    "VALUES (:team_id, :name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {"team_id": team_id, "name": role},
+            )
+            group_id = connection.execute(
+                text(
+                    "SELECT id FROM member_groups "
+                    "WHERE team_id = :team_id AND name = :name"
+                ),
+                {"team_id": team_id, "name": role},
+            ).scalar()
+            connection.execute(
+                text("UPDATE team_members SET group_id = :group_id WHERE id = :id"),
+                {"group_id": group_id, "id": member_id},
+            )
+
+        connection.execute(
+            text("UPDATE team_members SET role = NULL WHERE role IS NOT NULL")
+        )
 
 
 def _add_missing_sqlite_columns() -> None:

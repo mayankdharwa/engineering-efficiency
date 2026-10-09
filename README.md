@@ -5,7 +5,7 @@ A small, local dashboard for engineering-team efficiency metrics sourced from
 in a local SQLite database; the dashboard reads only from that database.
 
 **Scope:** configuration, Linear download, SQLite storage, per-team refresh and
-delete, role tagging (DEV/QA), computed efficiency metrics (planning efficiency,
+delete, fluid member groups, computed efficiency metrics (planning efficiency,
 velocity, velocity trend, bandwidth) and TanStack Charts visualisations.
 
 ## Efficiency model
@@ -30,11 +30,13 @@ velocity, velocity trend, bandwidth) and TanStack Charts visualisations.
   day: cumulative points done ÷ **fractional points**, where fractional points =
   `(taken ÷ working_days) × passed_days`. Days only appear once their cutoff has
   passed, so the last point equals the headline velocity. It is returned per
-  team and per role.
+  team and per group.
 - **Bandwidth efficiency** = `taken ÷ capacity`.
-- Members can be tagged with a **role** (`DEV` or `QA`). The dashboard groups the
-  metrics above by role (team totals are recomputed per group), so DEV and QA can
-  be compared side by side. Untagged members appear under *Unspecified*.
+- Members can be assigned to one **group** per team. Groups are fluid: add,
+  rename or delete any number of them. The dashboard recomputes the metrics above
+  per group (ratios of the group's totals) so groups can be compared side by
+  side, and the filter can combine any selection of groups. Members without a
+  group roll up under *Unassigned*.
 - Team-level values are the ratio of team totals (not sums of ratios).
 - Issues with no estimate count as 0 points (flagged as *unestimated*); unassigned
   work is included in team totals under an *Unassigned* row.
@@ -140,15 +142,17 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
    is only treated as elapsed once that local time has passed, so velocity isn't
    measured against a day that is still in progress.
 6. In **Configuration → Cycle & availability**, confirm the cycle dates pulled
-   from Linear, override the number of working days if the cycle contains
-   holidays, tag each person as **DEV** or **QA**, untick anyone who shouldn't
-   count toward capacity (non-developers, people not on this cycle), and set
-   **unavailable days** (planned leave) per person.
-7. Open **Dashboard**, pick a team, and use the **role filter** (All / DEV / QA)
-   at the top to scope the cards, charts and tables. Review the metric cards, the
-   **velocity trend** line, the per-person charts (capacity vs taken, velocity,
-   planned vs adhoc), the **role breakdown** table, the per-person table, and the
-   **Issues** table (tick **Show done** to include completed issues).
+   from Linear, add as many **groups** as you need (e.g. Backend, Frontend, QA),
+   and assign each person to one of them. Override the number of working days if
+   the cycle contains holidays, untick anyone who shouldn't count toward capacity
+   (non-developers, people not on this cycle), and set **unavailable days**
+   (planned leave) per person.
+7. Open **Dashboard**, pick a team, and use the **group filter** (All groups or
+   any combination) at the top to scope the cards, charts and tables. Review the
+   metric cards, the **velocity trend** line, the per-person charts (capacity vs
+   taken, velocity, planned vs adhoc), the **group breakdown** table, the
+   per-person table, and the **Issues** table (tick **Show done** to include
+   completed issues).
 
 > Only issues from each team's **active cycle** are downloaded and stored. Each
 > issue records the cycle it belongs to (`cycle_id`, `cycle_name`,
@@ -171,9 +175,13 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 | DELETE | `/api/teams/{id}`           | Delete a team and its locally stored data   |
 | GET    | `/api/teams/{id}/issues`    | List stored issues (paginated)               |
 | GET    | `/api/teams/{id}/sync-runs` | Recent sync history for a team               |
-| GET    | `/api/teams/{id}/cycle`     | Current cycle dates, working days, members   |
-| PUT    | `/api/teams/{id}/cycle`     | Update working days, dates, member leave/counting/role |
-| GET    | `/api/teams/{id}/stats`     | Computed efficiency metrics (team, per-role, per-person, velocity trend) |
+| GET    | `/api/teams/{id}/cycle`     | Current cycle dates, working days, groups, members |
+| PUT    | `/api/teams/{id}/cycle`     | Update working days, dates, member leave/counting/group |
+| GET    | `/api/teams/{id}/groups`    | List a team's member groups                  |
+| POST   | `/api/teams/{id}/groups`    | Add a member group                           |
+| PUT    | `/api/teams/{id}/groups/{groupId}` | Rename a member group                 |
+| DELETE | `/api/teams/{id}/groups/{groupId}` | Delete a group (unassigns its members)        |
+| GET    | `/api/teams/{id}/stats`     | Computed efficiency metrics (team, per-group, per-person, velocity trend) |
 
 Interactive docs are available at `/docs` while the backend is running.
 
@@ -193,7 +201,8 @@ Tables:
 - `cycle_settings` — per team/cycle start & end dates, the working-days override
   and whether the dates were edited manually.
 - `team_members` — the team's Linear membership, with active/assignable flags,
-  whether each member counts toward capacity, and the optional `DEV`/`QA` role tag.
+  whether each member counts toward capacity, and the optional group assignment.
+- `member_groups` — the per-team groups members can be assigned to.
 - `member_unavailability` — planned leave (days) per member per cycle.
 - `sync_runs` — audit log of every import/refresh.
 

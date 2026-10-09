@@ -1,17 +1,13 @@
 import { createColumnHelper } from '@tanstack/react-table'
 import { formatPercent, formatPoints } from '../lib/format'
+import { filterMembers } from '../lib/groups'
 import { appTableFeatures } from '../lib/table'
-import type { MemberMetricsOut, RoleFilter } from '../types'
+import type { MemberMetricsOut } from '../types'
 import { DataTable, type AppColumnDef } from './DataTable'
+import { GroupBadge } from './GroupBadge'
 import { PercentCell } from './PercentCell'
-import { RoleBadge } from './RoleBadge'
 
 const helper = createColumnHelper<typeof appTableFeatures, MemberMetricsOut>()
-
-function matchesRole(member: MemberMetricsOut, filter: RoleFilter): boolean {
-  if (filter === 'all') return true
-  return member.role === filter
-}
 
 /**
  * The per-person table lists only people who count toward capacity. The
@@ -32,9 +28,9 @@ const columns: AppColumnDef<MemberMetricsOut>[] = [
       )
     },
   }),
-  helper.accessor('role', {
-    header: 'Role',
-    cell: (ctx) => <RoleBadge role={ctx.getValue()} />,
+  helper.accessor('group_name', {
+    header: 'Group',
+    cell: (ctx) => <GroupBadge name={ctx.getValue()} />,
   }),
   helper.accessor('unavailable_days', {
     header: 'Unavailable',
@@ -72,11 +68,11 @@ const columns: AppColumnDef<MemberMetricsOut>[] = [
 
 interface MetricsTableProps {
   members: MemberMetricsOut[]
-  role: RoleFilter
+  selected: Set<string>
 }
 
-export function MetricsTable({ members, role }: MetricsTableProps) {
-  const filtered = members.filter((member) => isListed(member) && matchesRole(member, role))
+export function MetricsTable({ members, selected }: MetricsTableProps) {
+  const filtered = filterMembers(members, selected).filter(isListed)
 
   return (
     <DataTable
