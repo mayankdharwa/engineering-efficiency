@@ -19,11 +19,16 @@ const COLOR_TARGET = 'var(--muted-foreground)'
 
 const percentFormat = (value: number) => formatPercent(value)
 
-/** Render an ISO date as a short axis label, e.g. "Sep 30". */
+/** Render an ISO date as a short axis label, e.g. "Sep 30".
+ *
+ * The dates come from the backend already resolved to the configured working
+ * timezone, so format them as UTC to render exactly that calendar day.
+ */
 function dayLabel(value: unknown): string {
-  const date = new Date(`${String(value)}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return String(value)
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const text = String(value)
+  const date = new Date(`${text}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return text
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
 interface VelocityTrendChartProps {

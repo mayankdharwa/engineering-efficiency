@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .database import init_db
 from .routers import config as config_router
+from .routers import settings as settings_router
 from .routers import stats as stats_router
 from .routers import teams as teams_router
 
@@ -42,6 +43,7 @@ app.add_middleware(
 )
 
 app.include_router(config_router.router, prefix="/api")
+app.include_router(settings_router.router, prefix="/api")
 app.include_router(teams_router.router, prefix="/api")
 app.include_router(stats_router.router, prefix="/api")
 

@@ -16,6 +16,11 @@ export interface ConnectionTestOut {
   organization_name: string | null
 }
 
+export interface AppSettingsOut {
+  timezone: string
+  day_cutoff_hour: number
+}
+
 export interface TeamOut {
   id: number
   linear_id: string

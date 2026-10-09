@@ -31,26 +31,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api } from '../api'
+import { useTimezone } from '../hooks/useAppSettings'
 import { formatCycle } from '../lib/format'
+import { isoDateInTimeZone, zonedDateToUtcIso } from '../lib/timezone'
 import type { CycleSettingsIn, TeamOut } from '../types'
-
-/** Convert an ISO timestamp to the `YYYY-MM-DD` an <input type="date"> wants. */
-function toDateInput(value: string | null): string {
-  if (!value) return ''
-  // Timestamps are UTC. Treat any value without a timezone as UTC so the
-  // calendar date doesn't shift a day in non-UTC timezones (browsers parse a
-  // timezone-less string as local time).
-  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`
-  const date = new Date(normalized)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toISOString().slice(0, 10)
-}
-
-/** Convert an <input type="date"> value back to a UTC ISO timestamp. */
-function fromDateInput(value: string): string | null {
-  if (!value) return null
-  return new Date(`${value}T00:00:00Z`).toISOString()
-}
 
 type RoleValue = 'unset' | 'DEV' | 'QA'
 
@@ -62,6 +46,7 @@ const ROLE_OPTIONS: { label: string; value: RoleValue }[] = [
 
 export function CycleSettingsPanel() {
   const queryClient = useQueryClient()
+  const timezone = useTimezone()
   const teamsQuery = useQuery({ queryKey: ['teams'], queryFn: api.listTeams })
   const teams: TeamOut[] = teamsQuery.data ?? []
   const [teamId, setTeamId] = useState<number | null>(null)
@@ -95,8 +80,8 @@ export function CycleSettingsPanel() {
     const data = cycleQuery.data
     if (!data) return
     setWorkingDays(String(data.working_days))
-    setStartDate(toDateInput(data.starts_at))
-    setEndDate(toDateInput(data.ends_at))
+    setStartDate(isoDateInTimeZone(data.starts_at, timezone))
+    setEndDate(isoDateInTimeZone(data.ends_at, timezone))
     const next: Record<string, string> = {}
     const nextCounts: Record<string, boolean> = {}
     const nextRoles: Record<string, RoleValue> = {}
@@ -108,7 +93,7 @@ export function CycleSettingsPanel() {
     setAvailability(next)
     setCounts(nextCounts)
     setRoles(nextRoles)
-  }, [cycleQuery.data])
+  }, [cycleQuery.data, timezone])
 
   const saveMutation = useMutation({
     mutationFn: (payload: CycleSettingsIn) =>
@@ -137,8 +122,8 @@ export function CycleSettingsPanel() {
     if (workingDays.trim().length > 0 && !Number.isNaN(parsed)) {
       payload.working_days = parsed
     }
-    if (startDate) payload.starts_at = fromDateInput(startDate)
-    if (endDate) payload.ends_at = fromDateInput(endDate)
+    if (startDate) payload.starts_at = zonedDateToUtcIso(startDate, timezone)
+    if (endDate) payload.ends_at = zonedDateToUtcIso(endDate, timezone)
     saveMutation.mutate(payload)
   }
 

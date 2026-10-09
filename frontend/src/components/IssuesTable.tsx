@@ -1,5 +1,7 @@
 import { createColumnHelper } from '@tanstack/react-table'
+import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { useTimezone } from '../hooks/useAppSettings'
 import { formatDateTime, formatPoints } from '../lib/format'
 import { appTableFeatures } from '../lib/table'
 import type { IssueOut } from '../types'
@@ -30,7 +32,7 @@ function stateVariant(stateType: string | null): BadgeVariant {
   }
 }
 
-const columns: AppColumnDef<IssueOut>[] = [
+const columns = (timezone: string): AppColumnDef<IssueOut>[] => [
   helper.accessor('identifier', {
     header: 'ID',
     cell: (ctx) => (
@@ -72,13 +74,13 @@ const columns: AppColumnDef<IssueOut>[] = [
   helper.accessor('created_at', {
     header: 'Created',
     cell: (ctx) => (
-      <span className="text-muted-foreground">{formatDateTime(ctx.getValue())}</span>
+      <span className="text-muted-foreground">{formatDateTime(ctx.getValue(), timezone)}</span>
     ),
   }),
   helper.accessor('completed_at', {
     header: 'Completed',
     cell: (ctx) => (
-      <span className="text-muted-foreground">{formatDateTime(ctx.getValue())}</span>
+      <span className="text-muted-foreground">{formatDateTime(ctx.getValue(), timezone)}</span>
     ),
   }),
 ]
@@ -90,13 +92,15 @@ interface IssuesTableProps {
 }
 
 export function IssuesTable({ issues, showDone }: IssuesTableProps) {
+  const timezone = useTimezone()
+  const tableColumns = useMemo(() => columns(timezone), [timezone])
   const visible = showDone
     ? issues
     : issues.filter((issue) => issue.state_type !== 'completed')
 
   return (
     <DataTable
-      columns={columns}
+      columns={tableColumns}
       data={visible}
       emptyMessage={
         issues.length === 0

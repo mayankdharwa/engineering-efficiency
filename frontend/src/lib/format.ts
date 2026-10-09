@@ -1,10 +1,14 @@
-export function formatDateTime(value: string | null | undefined): string {
+export function formatDateTime(
+  value: string | null | undefined,
+  timeZone?: string,
+): string {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone,
   })
 }
 
@@ -38,11 +42,11 @@ export function formatCycle(
   return '—'
 }
 
-export function formatDate(value: string | null | undefined): string {
+export function formatDate(value: string | null | undefined, timeZone?: string): string {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleDateString(undefined, { dateStyle: 'medium' })
+  return date.toLocaleDateString(undefined, { dateStyle: 'medium', timeZone })
 }
 
 /** Format a 0..1 ratio (bandwidth can exceed 1) as a percentage. */

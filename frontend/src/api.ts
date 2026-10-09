@@ -1,4 +1,5 @@
 import type {
+  AppSettingsOut,
   ConnectionTestOut,
   CycleSettingsIn,
   CycleSettingsOut,
@@ -42,6 +43,13 @@ export const api = {
       body: JSON.stringify({ api_key: apiKey }),
     }),
   testConnection: () => request<ConnectionTestOut>('/config/test', { method: 'POST' }),
+
+  getSettings: () => request<AppSettingsOut>('/settings'),
+  updateSettings: (payload: { timezone: string; day_cutoff_hour: number }) =>
+    request<AppSettingsOut>('/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
 
   listTeams: () => request<TeamOut[]>('/teams'),
   importTeams: () => request<TeamOut[]>('/teams/import', { method: 'POST' }),

@@ -24,6 +24,8 @@ const COLOR_CAPACITY = 'var(--muted-foreground)'
 const MAX_VELOCITY = 1.2
 /** Where a truncated bar stops, leaving the 120% guide line visible. */
 const TRUNCATED_VELOCITY = 1.17
+/** A full-time cycle is 10 working days × 2 points. */
+const FULL_CAPACITY_POINTS = 20
 
 function chartHeight(count: number): number {
   return Math.max(160, count * 34 + 56)
@@ -66,6 +68,11 @@ export function MetricCharts({ members }: MetricChartsProps) {
         // the left like water. When taken exceeds capacity it visibly overflows.
         barX(capacityRows, { x: 'points', y: 'member', fill: COLOR_CAPACITY }),
         barX(takenRows, { x: 'points', y: 'member', fill: COLOR_TAKEN }),
+        // A full-time cycle is 20 points; mark it with a dotted reference line.
+        ruleX([FULL_CAPACITY_POINTS], {
+          stroke: 'var(--foreground)',
+          strokeDasharray: '2 3',
+        }),
       ],
       scales: {
         x: { scale: scaleLinear, nice: true, grid: true, axis: { label: 'Points' } },
@@ -177,7 +184,7 @@ export function MetricCharts({ members }: MetricChartsProps) {
         <CardHeader>
           <CardTitle>Capacity vs points taken</CardTitle>
           <CardDescription>
-            Capacity is the full bar; points taken fill it from the left.
+            Capacity is the full bar; points taken fill it from the left. Dotted = 20 pts.
           </CardDescription>
         </CardHeader>
         <CardContent>

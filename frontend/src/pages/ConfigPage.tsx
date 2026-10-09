@@ -14,7 +14,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '../api'
 import { CycleSettingsPanel } from '../components/CycleSettingsPanel'
+import { MetricSettingsPanel } from '../components/MetricSettingsPanel'
 import { TeamsTable } from '../components/TeamsTable'
+import { useTimezone } from '../hooks/useAppSettings'
 import { formatDateTime } from '../lib/format'
 
 interface Feedback {
@@ -24,6 +26,7 @@ interface Feedback {
 
 export function ConfigPage() {
   const queryClient = useQueryClient()
+  const timezone = useTimezone()
   const [apiKey, setApiKey] = useState('')
   const [feedback, setFeedback] = useState<Feedback | null>(null)
 
@@ -130,7 +133,7 @@ export function ConfigPage() {
               <>
                 Connected as <strong>{config.viewer_name ?? 'unknown user'}</strong>
                 {config.organization_name ? ` (${config.organization_name})` : ''}. Last updated{' '}
-                {formatDateTime(config.updated_at)}.
+                {formatDateTime(config.updated_at, timezone)}.
               </>
             ) : (
               'Paste a Linear personal API key. It is stored in the local SQLite database only.'
@@ -170,6 +173,8 @@ export function ConfigPage() {
           </div>
         </CardContent>
       </Card>
+
+      <MetricSettingsPanel />
 
       <Card>
         <CardHeader className="border-b">

@@ -23,11 +23,14 @@ velocity, velocity trend, bandwidth) and TanStack Charts visualisations.
   **adhoc**.
 - **Velocity** = `done ÷ (progress × taken)`, where `progress` is the fraction of
   the cycle's working days elapsed so far (only `completed` states count as
-  done). At cycle end this reduces to `done ÷ taken`; 100% means on pace.
+  done). The current day only counts once the configured end-of-day cutoff has
+  passed in the configured working timezone, so a partial day is not treated as
+  elapsed. At cycle end this reduces to `done ÷ taken`; 100% means on pace.
 - The **velocity trend** plots the same metric at the end of each elapsed working
   day: cumulative points done ÷ **fractional points**, where fractional points =
-  `(taken ÷ working_days) × passed_days`. The last point equals the headline
-  velocity. It is returned per team and per role.
+  `(taken ÷ working_days) × passed_days`. Days only appear once their cutoff has
+  passed, so the last point equals the headline velocity. It is returned per
+  team and per role.
 - **Bandwidth efficiency** = `taken ÷ capacity`.
 - Members can be tagged with a **role** (`DEV` or `QA`). The dashboard groups the
   metrics above by role (team totals are recomputed per group), so DEV and QA can
@@ -59,13 +62,14 @@ engineering-efficiency/
 │   ├── app/
 │   │   ├── main.py           # FastAPI app + SPA hosting
 │   │   ├── config.py         # settings (EE_* env vars)
+│   │   ├── app_settings.py   # working timezone / cutoff preferences
 │   │   ├── database.py       # SQLite engine / sessions
 │   │   ├── models.py         # LinearConfig, Team, Issue, CycleSettings, ...
 │   │   ├── schemas.py        # Pydantic API schemas
 │   │   ├── linear_client.py  # Linear GraphQL client
 │   │   ├── metrics.py        # efficiency metric computation
 │   │   ├── sync.py           # download + upsert logic
-│   │   └── routers/          # config, teams, stats endpoints
+│   │   └── routers/          # config, settings, teams, stats endpoints
 │   ├── data/                 # SQLite database (gitignored)
 │   └── pyproject.toml
 └── frontend/
@@ -131,12 +135,16 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
    membership into SQLite. Refreshing replaces the stored issues, so only the
    active cycle is ever kept. **Delete** removes a team and all of its local data
    (Linear is untouched).
-5. In **Configuration → Cycle & availability**, confirm the cycle dates pulled
+5. In **Configuration → Metrics timing**, set the **working timezone** and the
+   **hour after which the current day counts as elapsed** (default 7 PM). A day
+   is only treated as elapsed once that local time has passed, so velocity isn't
+   measured against a day that is still in progress.
+6. In **Configuration → Cycle & availability**, confirm the cycle dates pulled
    from Linear, override the number of working days if the cycle contains
    holidays, tag each person as **DEV** or **QA**, untick anyone who shouldn't
    count toward capacity (non-developers, people not on this cycle), and set
    **unavailable days** (planned leave) per person.
-6. Open **Dashboard**, pick a team, and use the **role filter** (All / DEV / QA)
+7. Open **Dashboard**, pick a team, and use the **role filter** (All / DEV / QA)
    at the top to scope the cards, charts and tables. Review the metric cards, the
    **velocity trend** line, the per-person charts (capacity vs taken, velocity,
    planned vs adhoc), the **role breakdown** table, the per-person table, and the
@@ -155,6 +163,8 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 | GET    | `/api/config`               | Current Linear connection status             |
 | PUT    | `/api/config`               | Save + validate a Linear API key             |
 | POST   | `/api/config/test`          | Re-test the saved connection                 |
+| GET    | `/api/settings`             | Working timezone + end-of-day cutoff         |
+| PUT    | `/api/settings`             | Update the working timezone / cutoff         |
 | GET    | `/api/teams`                | List locally stored teams                    |
 | POST   | `/api/teams/import`         | Fetch the team list from Linear              |
 | POST   | `/api/teams/{id}/refresh`   | Download the team's current-cycle issues    |
@@ -173,6 +183,8 @@ The SQLite file lives at `backend/data/engineering_efficiency.db` (gitignored).
 Tables:
 
 - `linear_config` — the saved API key and resolved viewer/org info (singleton).
+- `app_settings` — the working timezone and end-of-day cutoff used by the metrics
+  (singleton).
 - `teams` — teams imported from Linear, with issue counts and last-synced time.
 - `issues` — the **current cycle's** issues per team, with state, assignee,
   project, cycle (`cycle_id` / `cycle_name` / `cycle_number`), when each issue
@@ -198,6 +210,12 @@ Tables:
 
 Backend settings are overridable via `EE_`-prefixed environment variables (see
 `backend/.env.example`), e.g. `EE_DATABASE_URL`, `EE_FRONTEND_DIST`.
+
+Metric timing — the working timezone and the hour after which the current day
+counts as elapsed — is configured in the app under **Configuration → Metrics
+timing** and stored in the `app_settings` table. The timezone is used for every
+date-based calculation and for displaying dates/times across the dashboard,
+including the cycle start/end date pickers.
 
 ## Notes
 

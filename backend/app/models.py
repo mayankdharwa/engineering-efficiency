@@ -45,6 +45,25 @@ class LinearConfig(Base):
     )
 
 
+class AppSettings(Base):
+    """Singleton row (id == 1) holding app-wide metric preferences.
+
+    ``timezone`` is an IANA name (e.g. ``Asia/Kolkata``) that defines the
+    working calendar used to decide which day "now" falls on. ``day_cutoff_hour``
+    is the local hour (0-23) after which the current day counts as elapsed.
+    """
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    day_cutoff_hour: Mapped[int] = mapped_column(Integer, default=19)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, default=utcnow, onupdate=utcnow
+    )
+
+
 class Team(Base):
     __tablename__ = "teams"
 

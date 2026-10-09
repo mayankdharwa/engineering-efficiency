@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from ..app_settings import get_app_settings
 from ..database import get_db
 from ..linear_client import LinearError
 from ..metrics import compute_team_metrics, get_cycle_settings, weekdays_between
@@ -244,7 +245,9 @@ def update_cycle_settings(
 
     if payload.working_days is not None:
         # Submitting the computed default clears the override.
-        default_days = weekdays_between(settings.starts_at, settings.ends_at)
+        default_days = weekdays_between(
+            settings.starts_at, settings.ends_at, get_app_settings(db).zone
+        )
         if abs(payload.working_days - default_days) < 1e-9:
             settings.working_days = None
         else:

@@ -27,6 +27,7 @@ import { MetricCharts } from '../components/MetricCharts'
 import { MetricsTable } from '../components/MetricsTable'
 import { RoleMetricsTable } from '../components/RoleMetricsTable'
 import { VelocityTrendChart } from '../components/VelocityTrendChart'
+import { useTimezone } from '../hooks/useAppSettings'
 import {
   formatCycle,
   formatDate,
@@ -66,6 +67,7 @@ const ROLE_FILTERS: { label: string; value: RoleFilter }[] = [
 
 export function DashboardPage() {
   const queryClient = useQueryClient()
+  const timezone = useTimezone()
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
   const [showDone, setShowDone] = useState(false)
@@ -227,7 +229,8 @@ export function DashboardPage() {
                   {formatCycle(stats.cycle_name, stats.cycle_number)}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {formatDate(stats.starts_at)} → {formatDate(stats.ends_at)} ·{' '}
+                  {formatDate(stats.starts_at, timezone)} →{' '}
+                  {formatDate(stats.ends_at, timezone)} ·{' '}
                   {stats.working_days_overridden
                     ? `${formatPoints(stats.working_days)} working days (adjusted)`
                     : `${formatPoints(stats.working_days)} working days`}

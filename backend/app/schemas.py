@@ -27,6 +27,16 @@ class ConnectionTestOut(BaseModel):
     organization_name: str | None = None
 
 
+class AppSettingsOut(BaseModel):
+    timezone: str
+    day_cutoff_hour: int
+
+
+class AppSettingsIn(BaseModel):
+    timezone: str = Field(min_length=1, max_length=64)
+    day_cutoff_hour: int = Field(ge=0, le=23)
+
+
 class TeamOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -19,8 +19,11 @@ Derived per member:
 
 * ``planning_efficiency`` = ``planned / taken`` (higher is better)
 * ``velocity``            = ``done / (progress * taken)``, where ``progress`` is
-  the fraction of the cycle's working days elapsed so far (0..1). At the end of
-  the cycle this reduces to ``done / taken``; 100% means on pace.
+  the fraction of the cycle's working days elapsed so far (0..1). A day only
+  counts once the configured end-of-day cutoff (in the configured timezone) has
+  passed, so the current day is not treated as elapsed while work is still
+  ongoing. At the end of the cycle this reduces to ``done / taken``; 100% means
+  on pace.
 * ``bandwidth_efficiency``= ``taken / capacity``
 
 Team metrics are ratios of the team totals rather than sums of ratios.
@@ -31,11 +34,13 @@ aggregated per role so the dashboard can compare the groups.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .app_settings import DEFAULT_DAY_CUTOFF_HOUR, get_app_settings
 from .models import CycleSettings, Issue, MemberUnavailability, Team, TeamMember, utcnow
 
 POINTS_PER_DAY = 2.0
@@ -48,45 +53,28 @@ ROLE_QA = "QA"
 ROLE_LABELS = {ROLE_DEV: "DEV", ROLE_QA: "QA", None: "Unspecified"}
 
 
-def weekdays_between(start: datetime | None, end: datetime | None) -> float:
-    """Count weekdays in the half-open interval ``[start, end)``.
+def _to_local(value: datetime, tz: ZoneInfo) -> datetime:
+    """Convert a stored timestamp to the configured working timezone.
 
-    Treating the end date as exclusive gives the expected 10 working days for a
-    two-week Linear cycle (whose ``endsAt`` is often the following Monday).
+    Stored values are UTC (naive or aware); this normalises them first so the
+    local calendar date and clock time are always interpreted consistently.
     """
-    if start is None or end is None:
-        return DEFAULT_WORKING_DAYS
-
-    first, last = start.date(), end.date()
-    if last < first:
-        first, last = last, first
-    if first == last:
-        return 1.0 if first.weekday() < 5 else 0.0
-
-    days = 0
-    cursor = first
-    while cursor < last:
-        if cursor.weekday() < 5:
-            days += 1
-        cursor += timedelta(days=1)
-    return float(days)
+    return _comparable(value).replace(tzinfo=UTC).astimezone(tz)
 
 
-def _ratio(numerator: float, denominator: float) -> float | None:
-    if denominator <= 0:
-        return None
-    return numerator / denominator
+def _effective_date(now_local: datetime, cutoff_hour: int) -> date:
+    """The last calendar day that counts as elapsed.
 
-
-def elapsed_working_days(start: datetime | None, now: datetime) -> float:
-    """Count weekdays from ``start`` through ``now`` (inclusive).
-
-    The current day counts as elapsed so that velocity is defined from the first
-    day of the cycle rather than only after a full day has passed.
+    Before the cutoff the current day is still in progress, so it does not count
+    yet and the previous day is returned instead.
     """
-    if start is None:
-        return 0.0
-    first, last = start.date(), now.date()
+    if now_local.hour < cutoff_hour:
+        return now_local.date() - timedelta(days=1)
+    return now_local.date()
+
+
+def _count_weekdays(first: date, last: date) -> float:
+    """Count weekdays in the inclusive interval ``[first, last]``."""
     if last < first:
         return 0.0
     days = 0
@@ -98,13 +86,65 @@ def elapsed_working_days(start: datetime | None, now: datetime) -> float:
     return float(days)
 
 
+def weekdays_between(
+    start: datetime | None, end: datetime | None, tz: ZoneInfo | None = None
+) -> float:
+    """Count weekdays in the half-open interval ``[start, end)``.
+
+    Treating the end date as exclusive gives the expected 10 working days for a
+    two-week Linear cycle (whose ``endsAt`` is often the following Monday). Dates
+    are resolved in the configured working timezone.
+    """
+    if start is None or end is None:
+        return DEFAULT_WORKING_DAYS
+
+    zone = tz or ZoneInfo("UTC")
+    first, last = _to_local(start, zone).date(), _to_local(end, zone).date()
+    if last < first:
+        first, last = last, first
+    if first == last:
+        return 1.0 if first.weekday() < 5 else 0.0
+
+    return _count_weekdays(first, last - timedelta(days=1))
+
+
+def _ratio(numerator: float, denominator: float) -> float | None:
+    if denominator <= 0:
+        return None
+    return numerator / denominator
+
+
+def elapsed_working_days(
+    start: datetime | None,
+    now: datetime,
+    tz: ZoneInfo | None = None,
+    cutoff_hour: int = DEFAULT_DAY_CUTOFF_HOUR,
+) -> float:
+    """Count weekdays from ``start`` through the last *elapsed* day inclusive.
+
+    A day only counts once the configured cutoff hour has passed in the working
+    timezone. Before the cutoff the current day is still underway, so it is not
+    treated as elapsed (fixing velocity being penalised mid-day).
+    """
+    if start is None:
+        return 0.0
+    zone = tz or ZoneInfo("UTC")
+    first = _to_local(start, zone).date()
+    last = _effective_date(_to_local(now, zone), cutoff_hour)
+    return _count_weekdays(first, last)
+
+
 def _progress_fraction(
-    starts_at: datetime | None, working_days: float, now: datetime
+    starts_at: datetime | None,
+    working_days: float,
+    now: datetime,
+    tz: ZoneInfo | None = None,
+    cutoff_hour: int = DEFAULT_DAY_CUTOFF_HOUR,
 ) -> float:
     """Fraction of the cycle's working days elapsed, clamped to ``[0, 1]``."""
     if working_days <= 0:
         return 0.0
-    elapsed = elapsed_working_days(starts_at, now)
+    elapsed = elapsed_working_days(starts_at, now, tz, cutoff_hour)
     return max(0.0, min(elapsed / working_days, 1.0))
 
 
@@ -216,7 +256,13 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
             ),
         )
 
-    default_working_days = weekdays_between(settings.starts_at, settings.ends_at)
+    # Working-calendar preferences: which timezone defines a "day" and the
+    # local hour after which the current day counts as elapsed.
+    preferences = get_app_settings(db)
+    zone = preferences.zone
+    cutoff_hour = preferences.day_cutoff_hour
+
+    default_working_days = weekdays_between(settings.starts_at, settings.ends_at, zone)
     working_days = (
         settings.working_days
         if settings.working_days is not None
@@ -225,9 +271,10 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
     working_days = max(working_days, 0.0)
 
     # Velocity is scaled by how far through the cycle we are, so a mid-cycle
-    # number isn't penalised for the time that hasn't elapsed yet.
+    # number isn't penalised for the time that hasn't elapsed yet. The current
+    # day only counts once the cutoff hour has passed.
     now = utcnow()
-    progress = _progress_fraction(settings.starts_at, working_days, now)
+    progress = _progress_fraction(settings.starts_at, working_days, now, zone, cutoff_hour)
 
     issues = list(db.scalars(select(Issue).where(Issue.team_id == team.id)).all())
     members = list(
@@ -254,7 +301,7 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
         bucket.taken += estimate
         if issue.state_type == "completed":
             bucket.done += estimate
-        if _is_adhoc(issue, settings.starts_at):
+        if _is_adhoc(issue, settings.starts_at, zone):
             bucket.adhoc += estimate
         if issue.estimate is None:
             bucket.unestimated += 1
@@ -327,7 +374,13 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
             issue for issue in issues if issue.assignee_linear_id in member_ids
         ]
         return _velocity_trend(
-            member_issues, settings.starts_at, settings.ends_at, working_days, now
+            member_issues,
+            settings.starts_at,
+            settings.ends_at,
+            working_days,
+            now,
+            zone,
+            cutoff_hour,
         )
 
     role_rows: list[RoleMetrics] = []
@@ -341,7 +394,13 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
         )
 
     velocity_trend = _velocity_trend(
-        issues, settings.starts_at, settings.ends_at, working_days, now
+        issues,
+        settings.starts_at,
+        settings.ends_at,
+        working_days,
+        now,
+        zone,
+        cutoff_hour,
     )
 
     total_taken = sum(row.taken_points for row in rows)
@@ -377,16 +436,17 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
     )
 
 
-def _is_adhoc(issue: Issue, cycle_start: datetime | None) -> bool:
+def _is_adhoc(issue: Issue, cycle_start: datetime | None, tz: ZoneInfo) -> bool:
     """Adhoc work = attached strictly after the cycle's first day.
 
     Anything attached on the cycle's start date counts as planned; only work
-    attached from the second day onwards is adhoc.
+    attached from the second day onwards is adhoc. Calendar days are resolved in
+    the configured working timezone.
     """
     added = issue.added_to_cycle_at
     if added is None or cycle_start is None:
         return False
-    return _comparable(added).date() > _comparable(cycle_start).date()
+    return _to_local(added, tz).date() > _to_local(cycle_start, tz).date()
 
 
 def _comparable(value: datetime) -> datetime:
@@ -406,38 +466,42 @@ def _velocity_trend(
     ends_at: datetime | None,
     working_days: float,
     now: datetime,
+    tz: ZoneInfo,
+    cutoff_hour: int,
 ) -> list[VelocityTrendPoint]:
-    """Velocity as it stood at the end of each working day so far.
+    """Velocity as it stood at the end of each elapsed working day.
 
-    For every weekday from the cycle start through today (capped at the cycle
-    end) this recomputes the velocity formula using the points completed *by*
-    that day and the points expected by that day (``progress × taken``). The
-    final point therefore matches the headline velocity for the same issue set.
+    For every elapsed weekday from the cycle start (capped at the cycle end)
+    this recomputes the velocity formula using the points completed *by* that
+    day and the points expected by that day (``progress × taken``). A day only
+    counts once the configured cutoff hour has passed, so the final point
+    matches the headline velocity for the same issue set.
     """
     if starts_at is None or working_days <= 0:
         return []
 
-    start = _comparable(starts_at).date()
-    last = _comparable(now).date()
+    start = _to_local(starts_at, tz).date()
+    last = _effective_date(_to_local(now, tz), cutoff_hour)
     if ends_at is not None:
-        last = min(last, _comparable(ends_at).date())
+        last = min(last, _to_local(ends_at, tz).date())
     if last < start:
         return []
 
     taken_total = sum(issue.estimate or 0.0 for issue in issues)
     completions = [
-        (_comparable(issue.completed_at).date(), issue.estimate or 0.0)
+        (_to_local(issue.completed_at, tz).date(), issue.estimate or 0.0)
         for issue in issues
         if issue.state_type == "completed" and issue.completed_at is not None
     ]
 
     points: list[VelocityTrendPoint] = []
+    elapsed = 0
     cursor = start
     while cursor <= last:
         if cursor.weekday() < 5:
-            end_of_day = datetime(cursor.year, cursor.month, cursor.day, 23, 59)
-            progress = _progress_fraction(starts_at, working_days, end_of_day)
-            done = sum(points for day, points in completions if day <= cursor)
+            elapsed += 1
+            progress = max(0.0, min(elapsed / working_days, 1.0))
+            done = sum(value for day, value in completions if day <= cursor)
             expected = progress * taken_total
             points.append(
                 VelocityTrendPoint(
