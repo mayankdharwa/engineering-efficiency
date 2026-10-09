@@ -134,11 +134,12 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 2. Open **Configuration**, pick **Linear Setup** in the side panel, paste the key,
    and click **Save & validate**. The key is stored only in your local SQLite
    database.
-3. Still in **Linear Setup**, click **Import teams** to fetch the team list, then
-   **Refresh** a team to download its **current cycle's** issues and membership
-   into SQLite. Refreshing replaces the stored issues, so only the active cycle is
-   ever kept. **Delete** removes a team and all of its local data (Linear is
-   untouched).
+3. Still in **Linear Setup**, click **Import teams** to fetch the team list. Teams
+   that Linear reports as archived/deleted, or that have cycles disabled, are
+   skipped. Then **Refresh** a team to download its **current cycle's** issues and
+   membership into SQLite. Refreshing replaces the stored issues, so only the
+   active cycle is ever kept. **Delete** removes a team and all of its local data
+   (Linear is untouched).
 4. In **Configuration → Time Configuration**, set the **working timezone** and
    the **hour after which the current day counts as elapsed** (default 7 PM). A
    day is only treated as elapsed once that local time has passed, so velocity

@@ -21,7 +21,7 @@ query Viewer {
 
 TEAMS_QUERY = """
 query Teams($after: String) {
-  teams(first: 100, after: $after, includeArchived: true) {
+  teams(first: 100, after: $after) {
     nodes {
       id
       key
@@ -29,6 +29,8 @@ query Teams($after: String) {
       description
       color
       issueCount
+      archivedAt
+      cyclesEnabled
     }
     pageInfo { hasNextPage endCursor }
   }

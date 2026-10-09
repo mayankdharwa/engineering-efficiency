@@ -56,8 +56,26 @@ def client_from_config(db: Session) -> LinearClient:
     return LinearClient(config.api_key)
 
 
+def _should_skip_team(remote: dict[str, Any]) -> bool:
+    """Whether a Linear team should be left out of the local import.
+
+    Archived (soft-deleted) teams are skipped, as are teams where cycles are
+    explicitly disabled. ``cyclesEnabled`` is only treated as a skip when Linear
+    reports it as ``False`` so teams from responses that omit the field still
+    import.
+    """
+    if remote.get("archivedAt"):
+        return True
+    return remote.get("cyclesEnabled") is False
+
+
 def upsert_teams(db: Session, client: LinearClient) -> list[Team]:
-    """Fetch every team from Linear and upsert it locally."""
+    """Fetch every team from Linear and upsert it locally.
+
+    Archived teams and teams that don't use cycles are skipped. Teams are never
+    removed here: a previously imported team that later becomes archived keeps
+    its local row until the user deletes it.
+    """
     remote_teams = client.teams()
     by_linear_id = {
         team.linear_id: team
@@ -66,6 +84,8 @@ def upsert_teams(db: Session, client: LinearClient) -> list[Team]:
 
     result: list[Team] = []
     for remote in remote_teams:
+        if _should_skip_team(remote):
+            continue
         team = by_linear_id.get(remote["id"])
         if team is None:
             team = Team(linear_id=remote["id"])
