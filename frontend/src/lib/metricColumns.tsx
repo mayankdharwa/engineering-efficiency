@@ -8,7 +8,7 @@ import { appTableFeatures } from './table'
 import type { PointMetrics } from '../types'
 
 /**
- * Shared bandwidth / available / done / adhoc / planning / velocity columns.
+ * Shared bandwidth / velocity / available / done / adhoc / planning columns.
  * First-column(s) stay per-table.
  */
 export function createSharedMetricColumns<T extends PointMetrics>(
@@ -23,12 +23,16 @@ export function createSharedMetricColumns<T extends PointMetrics>(
         const row = ctx.row.original
         return (
           <BandwidthCell
-            taken={row.taken_points}
-            capacity={row.capacity_points}
             ratio={row.bandwidth_efficiency}
+            detail={`${formatPoints(row.taken_points)}/${formatPoints(row.capacity_points)}`}
           />
         )
       },
+    }),
+    helper.accessor((row) => row.velocity, {
+      id: 'velocity',
+      header: 'Velocity',
+      cell: (ctx) => <PercentCell value={ctx.getValue()} />,
     }),
     helper.accessor((row) => row.capacity_points - row.taken_points, {
       id: 'available_points',
@@ -50,12 +54,15 @@ export function createSharedMetricColumns<T extends PointMetrics>(
     helper.accessor((row) => row.planning_efficiency, {
       id: 'planning_efficiency',
       header: 'Planning Efficiency',
-      cell: (ctx) => <PercentCell value={ctx.getValue()} />,
-    }),
-    helper.accessor((row) => row.velocity, {
-      id: 'velocity',
-      header: 'Velocity',
-      cell: (ctx) => <PercentCell value={ctx.getValue()} />,
+      cell: (ctx) => {
+        const row = ctx.row.original
+        return (
+          <BandwidthCell
+            ratio={row.planning_efficiency}
+            detail={`${formatPoints(row.planned_points)}/${formatPoints(row.taken_points)}`}
+          />
+        )
+      },
     }),
   ]
 }

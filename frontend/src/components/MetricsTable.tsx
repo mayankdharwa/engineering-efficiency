@@ -36,7 +36,11 @@ const leadingColumns: AppColumnDef<MemberMetricsOut>[] = [
   }),
   helper.accessor('unavailable_days', {
     header: 'Unavailable',
-    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}d</span>,
+    cell: (ctx) => {
+      const days = ctx.getValue()
+      if (days <= 0) return <span className="text-muted-foreground">—</span>
+      return <span className="tabular-nums">{formatPoints(days)}d</span>
+    },
   }),
 ]
 

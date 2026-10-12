@@ -1,4 +1,5 @@
-import { formatPercent, formatPoints } from '../lib/format'
+import type { ReactNode } from 'react'
+import { formatPercent } from '../lib/format'
 
 const BANDWIDTH_DIGITS = 1
 
@@ -8,7 +9,7 @@ function displayedPercent(ratio: number | null | undefined): number | null {
   return Number((ratio * 100).toFixed(BANDWIDTH_DIGITS))
 }
 
-/** Colour the load figure by how it compares to a full 100% allocation. */
+/** Colour the ratio by how it compares to a full 100%. */
 function bandwidthTone(displayed: number | null): string {
   if (displayed === null) return 'text-muted-foreground'
   if (displayed < 100) return 'text-amber-600 dark:text-amber-400'
@@ -17,22 +18,20 @@ function bandwidthTone(displayed: number | null): string {
 }
 
 interface BandwidthCellProps {
-  taken: number
-  capacity: number
   ratio: number | null
+  /** Parenthetical next to the percentage, e.g. "18/20". */
+  detail: ReactNode
 }
 
-/** Combined bandwidth cell, e.g. "90.0% (18/20)". */
-export function BandwidthCell({ taken, capacity, ratio }: BandwidthCellProps) {
+/** Combined ratio cell, e.g. "90.0% (18/20)". */
+export function BandwidthCell({ ratio, detail }: BandwidthCellProps) {
   const displayed = displayedPercent(ratio)
   const percent = displayed === null ? '—' : formatPercent(ratio, BANDWIDTH_DIGITS)
   const weight = displayed !== null && displayed !== 100 ? 'font-bold' : 'font-normal'
   return (
     <span className="tabular-nums">
       <span className={`${weight} ${bandwidthTone(displayed)}`}>{percent}</span>{' '}
-      <span className="text-muted-foreground">
-        ({formatPoints(taken)}/{formatPoints(capacity)})
-      </span>
+      <span className="text-muted-foreground">({detail})</span>
     </span>
   )
 }

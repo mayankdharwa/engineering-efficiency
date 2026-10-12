@@ -1,5 +1,6 @@
-import { useTable, type ColumnDef, type RowData } from '@tanstack/react-table'
+import { useTable, type ColumnDef, type Header, type RowData } from '@tanstack/react-table'
 import { cn } from 'cn'
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from 'lucide-react'
 import { appTableFeatures } from '../lib/table'
 import {
   Table,
@@ -44,6 +45,44 @@ function columnClassName(
   )
 }
 
+function isCentered(columnId: string, centerExcept?: readonly string[]): boolean {
+  return Boolean(centerExcept) && !centerExcept?.includes(columnId)
+}
+
+function SortHeader<TData extends RowData>({
+  header,
+  table,
+  centered,
+}: {
+  header: Header<typeof appTableFeatures, TData>
+  table: ReturnType<typeof useTable<typeof appTableFeatures, TData>>
+  centered: boolean
+}) {
+  const label = header.isPlaceholder ? null : <table.FlexRender header={header} />
+  const column = header.column
+  if (!column.getCanSort()) return label
+
+  const sorted = column.getIsSorted()
+  const Icon =
+    sorted === 'asc' ? ArrowUpIcon : sorted === 'desc' ? ArrowDownIcon : ChevronsUpDownIcon
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex cursor-pointer items-center gap-1 rounded-sm select-none hover:text-foreground',
+        centered && 'justify-center',
+      )}
+      onClick={column.getToggleSortingHandler()}
+    >
+      {label}
+      <Icon
+        className={cn('size-3.5 shrink-0', sorted ? 'text-foreground' : 'text-muted-foreground/70')}
+        aria-hidden
+      />
+    </button>
+  )
+}
+
 export function DataTable<TData extends RowData>({
   columns,
   data,
@@ -59,19 +98,35 @@ export function DataTable<TData extends RowData>({
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id} className="hover:bg-transparent">
-              {headerGroup.headers.map((header) => (
-                <TableHead
-                  key={header.id}
-                  scope="col"
-                  className={columnClassName(
-                    header.column.id,
-                    header.column.columnDef.meta,
-                    centerExcept,
-                  )}
-                >
-                  {header.isPlaceholder ? null : <table.FlexRender header={header} />}
-                </TableHead>
-              ))}
+              {headerGroup.headers.map((header) => {
+                const sorted = header.column.getCanSort() ? header.column.getIsSorted() : undefined
+                return (
+                  <TableHead
+                    key={header.id}
+                    scope="col"
+                    aria-sort={
+                      sorted === 'asc'
+                        ? 'ascending'
+                        : sorted === 'desc'
+                          ? 'descending'
+                          : sorted === false
+                            ? 'none'
+                            : undefined
+                    }
+                    className={columnClassName(
+                      header.column.id,
+                      header.column.columnDef.meta,
+                      centerExcept,
+                    )}
+                  >
+                    <SortHeader
+                      header={header}
+                      table={table}
+                      centered={isCentered(header.column.id, centerExcept)}
+                    />
+                  </TableHead>
+                )
+              })}
             </TableRow>
           ))}
         </TableHeader>

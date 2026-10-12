@@ -173,7 +173,11 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
    cost**, derived from the team's man-day cost), the **velocity trend** line, the
    per-person charts (capacity vs taken, velocity, planned vs adhoc), the **group
    breakdown** table, the per-person table, and the **Issues** table (tick **Show
-   done** to include completed issues).
+   done** to include completed issues). Click any column header to sort a table
+   (shift-click to add a second key). Bandwidth and planning efficiency cells
+   show the percentage plus the matching fraction (`taken/capacity` and
+   `planned/taken`); adhoc points stay in their own column. Velocity sits next
+   to bandwidth. Zero unavailable days render as a dash.
 9. To share a local copy, open **Configuration → Import / Export**. **Download
    export** writes a JSON snapshot of teams, cycles, issues, groups, costs and
    settings. The Linear API key (and any other secrets) is never included. The
