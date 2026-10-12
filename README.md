@@ -77,6 +77,7 @@ engineering-efficiency/
 │   │   ├── linear_client.py  # Linear GraphQL client
 │   │   ├── metrics.py        # efficiency metric computation
 │   │   ├── sync.py           # download + upsert logic
+│   │   ├── transfer.py       # secret-free DB snapshot export / import
 │   │   └── routers/          # config, settings, teams, stats endpoints
 │   ├── data/                 # SQLite database (gitignored)
 │   └── pyproject.toml
@@ -173,6 +174,12 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
    per-person charts (capacity vs taken, velocity, planned vs adhoc), the **group
    breakdown** table, the per-person table, and the **Issues** table (tick **Show
    done** to include completed issues).
+9. To share a local copy, open **Configuration → Import / Export**. **Download
+   export** writes a JSON snapshot of teams, cycles, issues, groups, costs and
+   settings. The Linear API key (and any other secrets) is never included. The
+   other person imports that file on the same page — their existing Linear key
+   is left alone, and they can save their own under **Linear Setup**. Import
+   replaces shareable local data.
 
 > Refresh downloads only the team's **active** Linear cycle. Earlier finalized
 > cycles stay stored and can be opened from the cycle picker. Each issue points
@@ -187,6 +194,8 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 | GET    | `/api/config`               | Current Linear connection status             |
 | PUT    | `/api/config`               | Save + validate a Linear API key             |
 | POST   | `/api/config/test`          | Re-test the saved connection                 |
+| GET    | `/api/config/export`        | Download a JSON snapshot (Linear key omitted) |
+| POST   | `/api/config/import`        | Replace shareable local data from a snapshot |
 | GET    | `/api/settings`             | Working timezone + end-of-day cutoff         |
 | PUT    | `/api/settings`             | Update the working timezone / cutoff         |
 | GET    | `/api/teams`                | List locally stored teams                    |
@@ -275,3 +284,6 @@ including the cycle start/end date pickers.
   Each team rolls over independently.
 - A null estimate counts as 0 points but is surfaced as *unestimated*.
 - Two-way sync is out of scope: this app only reads from Linear.
+- **Import / Export** shares the local SQLite snapshot, not a live Linear
+  connection. The Linear API key is never written into the file; the importer
+  keeps whatever key they already saved.

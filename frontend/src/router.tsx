@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { Layout } from './components/Layout'
 import { CycleConfigurationPanel } from './components/CycleConfigurationPanel'
+import { DataTransferPanel } from './components/DataTransferPanel'
 import { GroupsPanel } from './components/GroupsPanel'
 import { LinearSetupPanel } from './components/LinearSetupPanel'
 import { TeamConfigurationPanel } from './components/TeamConfigurationPanel'
@@ -72,6 +73,12 @@ const teamRoute = createRoute({
   component: TeamConfigurationPanel,
 })
 
+const dataRoute = createRoute({
+  getParentRoute: () => configRoute,
+  path: '/data',
+  component: DataTransferPanel,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   configRoute.addChildren([
@@ -81,6 +88,7 @@ const routeTree = rootRoute.addChildren([
     cycleRoute,
     groupsRoute,
     teamRoute,
+    dataRoute,
   ]),
 ])
 

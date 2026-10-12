@@ -242,3 +242,11 @@ class CycleSettingsIn(BaseModel):
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     members: list[CycleMemberAvailabilityIn] = []
+
+
+class DataImportOut(BaseModel):
+    ok: bool = True
+    teams: int
+    cycles: int
+    issues: int
+    members: int

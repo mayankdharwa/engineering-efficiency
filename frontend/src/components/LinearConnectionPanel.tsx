@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -14,17 +13,12 @@ import { Label } from '@/components/ui/label'
 import { api } from '../api'
 import { useTimezone } from '../hooks/useAppSettings'
 import { formatDateTime } from '../lib/format'
-
-interface Feedback {
-  type: 'success' | 'error'
-  message: string
-}
+import { notifyError, notifySuccess } from '../lib/notify'
 
 export function LinearConnectionPanel() {
   const queryClient = useQueryClient()
   const timezone = useTimezone()
   const [apiKey, setApiKey] = useState('')
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
 
   const configQuery = useQuery({ queryKey: ['config'], queryFn: api.getConfig })
 
@@ -32,22 +26,21 @@ export function LinearConnectionPanel() {
     mutationFn: (key: string) => api.saveConfig(key),
     onSuccess: (config) => {
       setApiKey('')
-      setFeedback({
-        type: 'success',
-        message: config.organization_name
+      notifySuccess(
+        config.organization_name
           ? `Connected to ${config.organization_name}.`
           : 'API key saved.',
-      })
+      )
       queryClient.invalidateQueries({ queryKey: ['config'] })
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const testMutation = useMutation({
     mutationFn: api.testConnection,
     onSuccess: (result) =>
-      setFeedback({ type: result.ok ? 'success' : 'error', message: result.message }),
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+      result.ok ? notifySuccess(result.message) : notifyError(result.message),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const config = configQuery.data
@@ -69,11 +62,6 @@ export function LinearConnectionPanel() {
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
-        {feedback && (
-          <Alert variant={feedback.type === 'error' ? 'destructive' : 'default'}>
-            <AlertDescription>{feedback.message}</AlertDescription>
-          </Alert>
-        )}
         <div className="max-w-md space-y-2">
           <Label htmlFor="linear-api-key">Linear API key</Label>
           <Input

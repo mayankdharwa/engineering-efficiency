@@ -4,6 +4,7 @@ import type {
   CycleOut,
   CycleSettingsIn,
   CycleSettingsOut,
+  DataImportOut,
   GroupOut,
   IssueOut,
   LinearConfigOut,
@@ -120,4 +121,42 @@ export const api = {
     }),
   deleteGroup: (teamId: number, groupId: number) =>
     request<void>(`/teams/${teamId}/groups/${groupId}`, { method: 'DELETE' }),
+
+  downloadExport: async () => {
+    const response = await fetch(`${BASE}/config/export`)
+    if (!response.ok) {
+      let detail = response.statusText
+      try {
+        const body = (await response.json()) as { detail?: string }
+        detail = body.detail ?? detail
+      } catch {
+        // response body was not JSON; keep the status text
+      }
+      throw new Error(detail || `Request failed (${response.status})`)
+    }
+    const blob = await response.blob()
+    const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')
+    const filename = match?.[1] ?? 'engineering-efficiency-export.json'
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  importData: async (file: File) => {
+    let payload: unknown
+    try {
+      payload = JSON.parse(await file.text())
+    } catch {
+      throw new Error('This file is not valid JSON.')
+    }
+    return request<DataImportOut>('/config/import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
 }

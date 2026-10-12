@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,15 +26,11 @@ import { api } from '../api'
 import { useTimezone } from '../hooks/useAppSettings'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { formatCycle } from '../lib/format'
+import { notifyError, notifySuccess } from '../lib/notify'
 import { isoDateInTimeZone, zonedDateToUtcIso } from '../lib/timezone'
 import type { CycleSettingsIn } from '../types'
 import { CycleSelect } from './CycleSelect'
 import { TeamSelect } from './TeamSelect'
-
-interface Feedback {
-  type: 'success' | 'error'
-  message: string
-}
 
 /** Per-team cycle dates and working-day override. */
 export function CycleConfigurationPanel() {
@@ -72,8 +67,6 @@ export function CycleConfigurationPanel() {
   const [workingDays, setWorkingDays] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
-  const [finalizeFeedback, setFinalizeFeedback] = useState<Feedback | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   useEffect(() => {
@@ -88,12 +81,12 @@ export function CycleConfigurationPanel() {
     mutationFn: (payload: CycleSettingsIn) =>
       api.updateCycleSettings(teamId as number, payload, selectedCycleId),
     onSuccess: () => {
-      setFeedback({ type: 'success', message: 'Cycle configuration saved.' })
+      notifySuccess('Cycle configuration saved.')
       queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
       queryClient.invalidateQueries({ queryKey: ['cycles', teamId] })
       queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const cycle = cycleQuery.data
@@ -101,17 +94,14 @@ export function CycleConfigurationPanel() {
   const finalizeMutation = useMutation({
     mutationFn: () => api.finalizeCycle(teamId as number),
     onSuccess: () => {
-      setFinalizeFeedback({
-        type: 'success',
-        message:
-          'Cycle finalized. Its data is preserved; refresh the team to load the next cycle.',
-      })
+      notifySuccess(
+        'Cycle finalized. Its data is preserved; refresh the team to load the next cycle.',
+      )
       queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
       queryClient.invalidateQueries({ queryKey: ['cycles', teamId] })
       queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
     },
-    onError: (error: Error) =>
-      setFinalizeFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   function handleSave() {
@@ -147,12 +137,6 @@ export function CycleConfigurationPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
-          {feedback && (
-            <Alert variant={feedback.type === 'error' ? 'destructive' : 'default'}>
-              <AlertDescription>{feedback.message}</AlertDescription>
-            </Alert>
-          )}
-
           {teamId === null ? null : cycleQuery.isLoading ? (
             <div className="space-y-3">
               <Skeleton className="h-5 w-48" />
@@ -239,11 +223,6 @@ export function CycleConfigurationPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
-          {finalizeFeedback && (
-            <Alert variant={finalizeFeedback.type === 'error' ? 'destructive' : 'default'}>
-              <AlertDescription>{finalizeFeedback.message}</AlertDescription>
-            </Alert>
-          )}
           {cycle && !cycle.is_current ? (
             <p className="text-sm text-muted-foreground">
               This is a historical cycle. Finalize applies only to the team&apos;s current cycle.

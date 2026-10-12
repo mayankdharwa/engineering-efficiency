@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -29,17 +28,13 @@ import {
 } from '@/components/ui/table'
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
+import { notifyError, notifySuccess } from '../lib/notify'
 import type { CycleSettingsIn, GroupOut } from '../types'
 import { CostConfigurationPanel } from './CostConfigurationPanel'
 import { TeamSelect } from './TeamSelect'
 
 /** Sentinel Select value for "no group". */
 const NO_GROUP = 'unset'
-
-interface Feedback {
-  type: 'success' | 'error'
-  message: string
-}
 
 /** Per-team member configuration: group assignment, capacity and planned leave. */
 export function TeamConfigurationPanel() {
@@ -55,7 +50,6 @@ export function TeamConfigurationPanel() {
   const [availability, setAvailability] = useState<Record<string, string>>({})
   const [counts, setCounts] = useState<Record<string, boolean>>({})
   const [assignments, setAssignments] = useState<Record<string, string>>({})
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
 
   useEffect(() => {
     const data = cycleQuery.data
@@ -78,11 +72,11 @@ export function TeamConfigurationPanel() {
     mutationFn: (payload: CycleSettingsIn) =>
       api.updateCycleSettings(teamId as number, payload),
     onSuccess: () => {
-      setFeedback({ type: 'success', message: 'Team configuration saved.' })
+      notifySuccess('Team configuration saved.')
       queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
       queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const cycle = cycleQuery.data
@@ -137,12 +131,6 @@ export function TeamConfigurationPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
-          {feedback && (
-            <Alert variant={feedback.type === 'error' ? 'destructive' : 'default'}>
-              <AlertDescription>{feedback.message}</AlertDescription>
-            </Alert>
-          )}
-
           {teamId === null ? null : cycleQuery.isLoading ? (
             <Skeleton className="h-40 w-full" />
           ) : cycleQuery.isError ? (

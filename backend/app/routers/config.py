@@ -1,14 +1,20 @@
-"""Linear connection configuration endpoints."""
+"""Linear connection and shareable-data configuration endpoints."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..linear_client import LinearClient, LinearError
 from ..models import LinearConfig
-from ..schemas import ConnectionTestOut, LinearConfigIn, LinearConfigOut
+from ..schemas import ConnectionTestOut, DataImportOut, LinearConfigIn, LinearConfigOut
+from ..transfer import TransferError, export_snapshot, import_snapshot
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -75,4 +81,36 @@ def test_connection(db: Session = Depends(get_db)) -> ConnectionTestOut:
         message=f"Connected as {viewer.get('name') or 'unknown user'}.",
         viewer_name=viewer.get("name"),
         organization_name=org,
+    )
+
+
+@router.get("/export")
+def export_data(db: Session = Depends(get_db)) -> JSONResponse:
+    """Download a JSON snapshot of the local database, minus secrets."""
+    payload = export_snapshot(db)
+    filename = f"engineering-efficiency-{datetime.now(UTC).date().isoformat()}.json"
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/import", response_model=DataImportOut)
+def import_data(payload: dict[str, Any], db: Session = Depends(get_db)) -> DataImportOut:
+    """Replace shareable local data with a previously exported snapshot."""
+    try:
+        result = import_snapshot(db, payload)
+    except TransferError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="This export could not be applied to the database.",
+        ) from exc
+    return DataImportOut(
+        ok=True,
+        teams=result.teams,
+        cycles=result.cycles,
+        issues=result.issues,
+        members=result.members,
     )

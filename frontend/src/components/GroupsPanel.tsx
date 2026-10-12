@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -13,13 +12,9 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
+import { notifyError, notifySuccess } from '../lib/notify'
 import type { GroupOut } from '../types'
 import { TeamSelect } from './TeamSelect'
-
-interface Feedback {
-  type: 'success' | 'error'
-  message: string
-}
 
 /** Add, rename and delete a team's member groups. */
 export function GroupsPanel() {
@@ -35,7 +30,6 @@ export function GroupsPanel() {
 
   const [groupDrafts, setGroupDrafts] = useState<Record<number, string>>({})
   const [newGroupName, setNewGroupName] = useState('')
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
 
   useEffect(() => {
     if (!groupsQuery.data) return
@@ -54,29 +48,29 @@ export function GroupsPanel() {
     mutationFn: (name: string) => api.createGroup(teamId as number, name),
     onSuccess: (group) => {
       setNewGroupName('')
-      setFeedback({ type: 'success', message: `Added group '${group.name}'.` })
+      notifySuccess(`Added group '${group.name}'.`)
       invalidate()
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const renameGroup = useMutation({
     mutationFn: ({ id, name }: { id: number; name: string }) =>
       api.renameGroup(teamId as number, id, name),
     onSuccess: (group) => {
-      setFeedback({ type: 'success', message: `Renamed group to '${group.name}'.` })
+      notifySuccess(`Renamed group to '${group.name}'.`)
       invalidate()
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const deleteGroup = useMutation({
     mutationFn: (id: number) => api.deleteGroup(teamId as number, id),
     onSuccess: () => {
-      setFeedback({ type: 'success', message: 'Group deleted; members were unassigned.' })
+      notifySuccess('Group deleted; members were unassigned.')
       invalidate()
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   return (
@@ -91,12 +85,6 @@ export function GroupsPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
-          {feedback && (
-            <Alert variant={feedback.type === 'error' ? 'destructive' : 'default'}>
-              <AlertDescription>{feedback.message}</AlertDescription>
-            </Alert>
-          )}
-
           {teamId === null ? null : groupsQuery.isLoading ? (
             <div className="space-y-3">
               <Skeleton className="h-8 w-full max-w-md" />

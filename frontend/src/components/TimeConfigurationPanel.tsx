@@ -20,6 +20,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { APP_SETTINGS_QUERY_KEY, useAppSettings } from '../hooks/useAppSettings'
+import { notifyError, notifySuccess } from '../lib/notify'
 
 /** Format a 0-23 hour as a localized time label (e.g. "7:00 PM"). */
 function formatHour(hour: number): string {
@@ -45,9 +46,6 @@ export function TimeConfigurationPanel() {
   const settingsQuery = useAppSettings()
   const [timezone, setTimezone] = useState('UTC')
   const [cutoffHour, setCutoffHour] = useState(19)
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
-    null,
-  )
 
   useEffect(() => {
     const data = settingsQuery.data
@@ -62,13 +60,13 @@ export function TimeConfigurationPanel() {
   const saveMutation = useMutation({
     mutationFn: () => api.updateSettings({ timezone, day_cutoff_hour: cutoffHour }),
     onSuccess: (data) => {
-      setFeedback({ type: 'success', message: 'Timing settings saved.' })
+      notifySuccess('Timing settings saved.')
       setTimezone(data.timezone)
       setCutoffHour(data.day_cutoff_hour)
       queryClient.invalidateQueries({ queryKey: APP_SETTINGS_QUERY_KEY })
       queryClient.invalidateQueries({ queryKey: ['stats'] })
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   return (
@@ -90,68 +88,49 @@ export function TimeConfigurationPanel() {
         ) : settingsQuery.isError ? (
           <p className="text-sm text-destructive">{settingsQuery.error.message}</p>
         ) : (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="metrics-timezone">Working timezone</Label>
-                <Select
-                  items={zones.map((zone) => ({ label: zone, value: zone }))}
-                  value={timezone}
-                  onValueChange={(value) => {
-                    setFeedback(null)
-                    setTimezone(value as string)
-                  }}
-                >
-                  <SelectTrigger id="metrics-timezone" className="w-full max-w-md">
-                    <SelectValue placeholder="Select a timezone" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {zones.map((zone) => (
-                      <SelectItem key={zone} value={zone}>
-                        {zone}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="metrics-cutoff">Day counts as elapsed after</Label>
-                <Select
-                  items={hours.map((hour) => ({
-                    label: formatHour(hour),
-                    value: hour,
-                  }))}
-                  value={cutoffHour}
-                  onValueChange={(value) => {
-                    setFeedback(null)
-                    setCutoffHour(value as number)
-                  }}
-                >
-                  <SelectTrigger id="metrics-cutoff" className="w-full max-w-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {hours.map((hour) => (
-                      <SelectItem key={hour} value={hour}>
-                        {formatHour(hour)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {feedback && (
-              <p
-                className={
-                  feedback.type === 'error'
-                    ? 'text-sm text-destructive'
-                    : 'text-sm text-muted-foreground'
-                }
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="metrics-timezone">Working timezone</Label>
+              <Select
+                items={zones.map((zone) => ({ label: zone, value: zone }))}
+                value={timezone}
+                onValueChange={(value) => setTimezone(value as string)}
               >
-                {feedback.message}
-              </p>
-            )}
-          </>
+                <SelectTrigger id="metrics-timezone" className="w-full max-w-md">
+                  <SelectValue placeholder="Select a timezone" />
+                </SelectTrigger>
+                <SelectContent>
+                  {zones.map((zone) => (
+                    <SelectItem key={zone} value={zone}>
+                      {zone}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="metrics-cutoff">Day counts as elapsed after</Label>
+              <Select
+                items={hours.map((hour) => ({
+                  label: formatHour(hour),
+                  value: hour,
+                }))}
+                value={cutoffHour}
+                onValueChange={(value) => setCutoffHour(value as number)}
+              >
+                <SelectTrigger id="metrics-cutoff" className="w-full max-w-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {hours.map((hour) => (
+                    <SelectItem key={hour} value={hour}>
+                      {formatHour(hour)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         )}
       </CardContent>
       {settingsQuery.data && (

@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { Toaster } from '@/components/ui/toast'
 
 const navBase =
   'rounded-md px-3 py-1.5 text-sm font-medium transition-colors'
@@ -26,6 +27,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="w-full flex-1 px-4 py-6 sm:px-6">{children}</main>
+      <Toaster />
     </div>
   )
 }

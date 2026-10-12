@@ -11,6 +11,7 @@ const SECTIONS = [
   { to: '/config/cycle', label: 'Cycle Configuration' },
   { to: '/config/groups', label: 'Groups' },
   { to: '/config/team', label: 'Team Configuration' },
+  { to: '/config/data', label: 'Import / Export' },
 ] as const
 
 export function ConfigLayout() {
@@ -19,7 +20,8 @@ export function ConfigLayout() {
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Configuration</h1>
         <p className="text-sm text-muted-foreground">
-          Connect to Linear and manage the teams and cycle settings stored locally.
+          Connect to Linear, manage the teams and cycle settings stored locally,
+          or share a snapshot of that data.
         </p>
       </div>
 

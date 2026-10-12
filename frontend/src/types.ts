@@ -192,3 +192,11 @@ export interface CycleSettingsIn {
   ends_at?: string | null
   members?: CycleMemberAvailabilityIn[]
 }
+
+export interface DataImportOut {
+  ok: boolean
+  teams: number
+  cycles: number
+  issues: number
+  members: number
+}

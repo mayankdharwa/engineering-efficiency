@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useState } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -11,16 +10,11 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { api } from '../api'
+import { notifyError, notifySuccess } from '../lib/notify'
 import { TeamsTable } from './TeamsTable'
-
-interface Feedback {
-  type: 'success' | 'error'
-  message: string
-}
 
 export function TeamsPanel() {
   const queryClient = useQueryClient()
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
 
   const configQuery = useQuery({ queryKey: ['config'], queryFn: api.getConfig })
   const teamsQuery = useQuery({ queryKey: ['teams'], queryFn: api.listTeams })
@@ -29,25 +23,22 @@ export function TeamsPanel() {
   const importMutation = useMutation({
     mutationFn: api.importTeams,
     onSuccess: (imported) => {
-      setFeedback({ type: 'success', message: `Imported ${imported.length} team(s) from Linear.` })
+      notifySuccess(`Imported ${imported.length} team(s) from Linear.`)
       queryClient.invalidateQueries({ queryKey: ['teams'] })
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const refreshMutation = useMutation({
     mutationFn: (teamId: number) => api.refreshTeam(teamId),
     onSuccess: (result) => {
-      setFeedback({
-        type: 'success',
-        message: result.message ?? `Synced ${result.issues_synced} issue(s).`,
-      })
+      notifySuccess(result.message ?? `Synced ${result.issues_synced} issue(s).`)
       queryClient.invalidateQueries({ queryKey: ['teams'] })
       queryClient.invalidateQueries({ queryKey: ['issues', result.team_id] })
       queryClient.invalidateQueries({ queryKey: ['cycle', result.team_id] })
       queryClient.invalidateQueries({ queryKey: ['stats', result.team_id] })
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const handleRefresh = useCallback(
@@ -59,16 +50,13 @@ export function TeamsPanel() {
     mutationFn: (teamId: number) => api.deleteTeam(teamId),
     onSuccess: (_result, teamId) => {
       const team = teams.find((candidate) => candidate.id === teamId)
-      setFeedback({
-        type: 'success',
-        message: team ? `Deleted ${team.name}.` : 'Team deleted.',
-      })
+      notifySuccess(team ? `Deleted ${team.name}.` : 'Team deleted.')
       queryClient.invalidateQueries({ queryKey: ['teams'] })
       queryClient.removeQueries({ queryKey: ['issues', teamId] })
       queryClient.removeQueries({ queryKey: ['cycle', teamId] })
       queryClient.removeQueries({ queryKey: ['stats', teamId] })
     },
-    onError: (error: Error) => setFeedback({ type: 'error', message: error.message }),
+    onError: (error: Error) => notifyError(error.message),
   })
 
   const handleDelete = useCallback(
@@ -99,11 +87,6 @@ export function TeamsPanel() {
         </CardAction>
       </CardHeader>
       <CardContent className="gap-4">
-        {feedback && (
-          <Alert variant={feedback.type === 'error' ? 'destructive' : 'default'}>
-            <AlertDescription>{feedback.message}</AlertDescription>
-          </Alert>
-        )}
         <TeamsTable
           teams={teams}
           onRefresh={handleRefresh}
