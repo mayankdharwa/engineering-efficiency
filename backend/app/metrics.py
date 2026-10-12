@@ -40,27 +40,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .app_settings import DEFAULT_DAY_CUTOFF_HOUR, get_app_settings
+from .cycles import load_team_cycle_data
 from .group_colors import resolve_color
-from .models import (
-    Cycle,
-    CycleMembership,
-    Issue,
-    MemberGroup,
-    Team,
-    TeamMember,
-    utcnow,
-)
+from .models import Cycle, Issue, Team, utcnow
 
 POINTS_PER_DAY = 2.0
 DEFAULT_WORKING_DAYS = 10.0
 UNASSIGNED_LABEL = "Unassigned"
-
-# Label for real members who have not been assigned to any group.
-UNGROUPED_LABEL = "Unassigned"
 
 
 def _to_local(value: datetime, tz: ZoneInfo) -> datetime:
@@ -240,7 +229,7 @@ class TeamMetrics:
 
 
 @dataclass
-class _Bucket:
+class _AssigneeIssueTotals:
     taken: float = 0.0
     done: float = 0.0
     adhoc: float = 0.0
@@ -261,16 +250,11 @@ def get_cycle(
     return cycle
 
 
-def get_cycle_settings(db: Session, team: Team) -> Cycle | None:
-    """Backward-compatible alias for :func:`get_cycle`."""
-    return get_cycle(db, team)
-
-
 def compute_team_metrics(
     db: Session, team: Team, cycle: Cycle | None = None
 ) -> TeamMetrics:
-    settings = cycle if cycle is not None else get_cycle(db, team)
-    if settings is None:
+    cycle = cycle if cycle is not None else get_cycle(db, team)
+    if cycle is None:
         return TeamMetrics(
             ready=False,
             message=(
@@ -285,11 +269,9 @@ def compute_team_metrics(
     zone = preferences.zone
     cutoff_hour = preferences.day_cutoff_hour
 
-    default_working_days = weekdays_between(settings.starts_at, settings.ends_at, zone)
+    default_working_days = weekdays_between(cycle.starts_at, cycle.ends_at, zone)
     working_days = (
-        settings.working_days
-        if settings.working_days is not None
-        else default_working_days
+        cycle.working_days if cycle.working_days is not None else default_working_days
     )
     working_days = max(working_days, 0.0)
 
@@ -297,50 +279,28 @@ def compute_team_metrics(
     # number isn't penalised for the time that hasn't elapsed yet. The current
     # day only counts once the cutoff hour has passed.
     now = utcnow()
-    progress = _progress_fraction(settings.starts_at, working_days, now, zone, cutoff_hour)
+    progress = _progress_fraction(cycle.starts_at, working_days, now, zone, cutoff_hour)
 
-    issues = list(
-        db.scalars(
-            select(Issue).where(
-                Issue.team_id == team.id,
-                Issue.cycle_id == settings.id,
-            )
-        ).all()
-    )
-    members = list(
-        db.scalars(select(TeamMember).where(TeamMember.team_id == team.id)).all()
-    )
-    groups = list(
-        db.scalars(
-            select(MemberGroup)
-            .where(MemberGroup.team_id == team.id)
-            .order_by(MemberGroup.id)
-        ).all()
-    )
+    ctx = load_team_cycle_data(db, team, cycle)
+    issues = ctx.issues
+    members = ctx.members
+    groups = ctx.groups
+    memberships = ctx.memberships
     group_name_by_id = {group.id: group.name for group in groups}
     group_color_by_id = {group.id: resolve_color(group.color) for group in groups}
-    memberships = {
-        row.member_linear_id: row
-        for row in db.scalars(
-            select(CycleMembership).where(
-                CycleMembership.team_id == team.id,
-                CycleMembership.cycle_id == settings.id,
-            )
-        ).all()
-    }
 
     # Bucket issues by assignee (None groups unassigned work).
-    buckets: dict[str | None, _Bucket] = {}
+    buckets: dict[str | None, _AssigneeIssueTotals] = {}
     for issue in issues:
         key = issue.assignee_linear_id
-        bucket = buckets.setdefault(key, _Bucket())
+        bucket = buckets.setdefault(key, _AssigneeIssueTotals())
         if bucket.name is None:
             bucket.name = issue.assignee_name
         estimate = issue.estimate or 0.0
         bucket.taken += estimate
-        if issue.state_type == "completed":
+        if issue.is_completed:
             bucket.done += estimate
-        if _is_adhoc(issue, settings.starts_at, zone):
+        if _is_adhoc(issue, cycle.starts_at, zone):
             bucket.adhoc += estimate
         if issue.estimate is None:
             bucket.unestimated += 1
@@ -361,7 +321,7 @@ def compute_team_metrics(
     for linear_id in member_ids:
         member = member_by_id.get(linear_id)
         snapshot = memberships.get(linear_id)
-        bucket = buckets.get(linear_id, _Bucket())
+        bucket = buckets.get(linear_id, _AssigneeIssueTotals())
         name = (
             (member.display_name or member.name) if member else None
         ) or bucket.name or linear_id
@@ -429,8 +389,8 @@ def compute_team_metrics(
         ]
         return _velocity_trend(
             member_issues,
-            settings.starts_at,
-            settings.ends_at,
+            cycle.starts_at,
+            cycle.ends_at,
             working_days,
             now,
             zone,
@@ -456,14 +416,14 @@ def compute_team_metrics(
     if ungrouped:
         group_rows.append(
             _build_group_metrics(
-                None, UNGROUPED_LABEL, ungrouped, progress, _trend_for(ungrouped), None
+                None, UNASSIGNED_LABEL, ungrouped, progress, _trend_for(ungrouped), None
             )
         )
 
     velocity_trend = _velocity_trend(
         issues,
-        settings.starts_at,
-        settings.ends_at,
+        cycle.starts_at,
+        cycle.ends_at,
         working_days,
         now,
         zone,
@@ -478,15 +438,15 @@ def compute_team_metrics(
 
     return TeamMetrics(
         ready=True,
-        cycle_id=settings.id,
-        cycle_linear_id=settings.linear_id,
-        cycle_name=settings.name,
-        cycle_number=settings.number,
-        starts_at=settings.starts_at,
-        ends_at=settings.ends_at,
+        cycle_id=cycle.id,
+        cycle_linear_id=cycle.linear_id,
+        cycle_name=cycle.name,
+        cycle_number=cycle.number,
+        starts_at=cycle.starts_at,
+        ends_at=cycle.ends_at,
         working_days=working_days,
         default_working_days=default_working_days,
-        working_days_overridden=settings.working_days is not None,
+        working_days_overridden=cycle.working_days is not None,
         points_per_day=POINTS_PER_DAY,
         progress=progress,
         total_taken_points=total_taken,
@@ -559,7 +519,7 @@ def _velocity_trend(
     completions = [
         (_to_local(issue.completed_at, tz).date(), issue.estimate or 0.0)
         for issue in issues
-        if issue.state_type == "completed" and issue.completed_at is not None
+        if issue.is_completed and issue.completed_at is not None
     ]
 
     points: list[VelocityTrendPoint] = []
@@ -628,7 +588,7 @@ def _build_member_metrics(
     unavailable: float,
     working_days: float,
     progress: float = 1.0,
-    bucket: _Bucket,
+    bucket: _AssigneeIssueTotals,
     capacity_points: float | None = None,
 ) -> MemberMetrics:
     if capacity_points is None:

@@ -138,7 +138,9 @@ class GroupMetricsOut(BaseModel):
     velocity_trend: list[VelocityTrendPointOut] = []
 
 
-class TeamStatsOut(BaseModel):
+class CycleHeaderOut(BaseModel):
+    """Shared cycle-header fields; subclasses stay flat on the wire."""
+
     team_id: int
     ready: bool
     message: str | None = None
@@ -152,6 +154,9 @@ class TeamStatsOut(BaseModel):
     default_working_days: float
     working_days_overridden: bool
     points_per_day: float
+
+
+class TeamStatsOut(CycleHeaderOut):
     progress: float = 0.0
     total_taken_points: float
     total_done_points: float
@@ -231,22 +236,9 @@ class CycleOut(BaseModel):
     is_current: bool = False
 
 
-class CycleSettingsOut(BaseModel):
-    team_id: int
-    ready: bool
-    message: str | None = None
-    cycle_id: int | None = None
-    cycle_linear_id: str | None = None
-    cycle_name: str | None = None
-    cycle_number: int | None = None
-    starts_at: datetime | None = None
-    ends_at: datetime | None = None
-    working_days: float
-    default_working_days: float
-    working_days_overridden: bool
+class CycleSettingsOut(CycleHeaderOut):
     archived_at: datetime | None = None
     is_current: bool = False
-    points_per_day: float
     groups: list[GroupOut] = []
     members: list[CycleMemberOut] = []
 

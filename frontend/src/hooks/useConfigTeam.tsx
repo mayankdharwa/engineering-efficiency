@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from 'react'
 import { api } from '../api'
+import { queryKeys } from '../lib/queryKeys'
+import { pickDefaultTeamId } from '../lib/selection'
 import type { TeamOut } from '../types'
 
 interface ConfigTeamContextValue {
@@ -23,17 +25,13 @@ const ConfigTeamContext = createContext<ConfigTeamContextValue | null>(null)
  * the same team.
  */
 export function ConfigTeamProvider({ children }: { children: ReactNode }) {
-  const teamsQuery = useQuery({ queryKey: ['teams'], queryFn: api.listTeams })
+  const teamsQuery = useQuery({ queryKey: queryKeys.teams, queryFn: api.listTeams })
   const teams = teamsQuery.data ?? []
   const [teamId, setTeamId] = useState<number | null>(null)
 
   useEffect(() => {
-    if (teams.length === 0) return
-    // Fall back to the first team when nothing is selected or the selected
-    // team no longer exists (e.g. it was just deleted).
-    if (teamId === null || !teams.some((team) => team.id === teamId)) {
-      setTeamId(teams[0].id)
-    }
+    const next = pickDefaultTeamId(teams, teamId)
+    if (next !== teamId) setTeamId(next)
   }, [teamId, teams])
 
   return (

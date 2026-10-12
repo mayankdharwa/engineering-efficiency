@@ -22,6 +22,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import { QueryPanelBody } from './QueryPanelBody'
 
 /** Currency symbols the app can display, with their names for the dropdown. */
 const CURRENCIES = [
@@ -39,7 +41,7 @@ export function CostConfigurationPanel() {
   const [manDayCost, setManDayCost] = useState('0')
 
   const costQuery = useQuery({
-    queryKey: ['team-cost', teamId],
+    queryKey: queryKeys.teamCost(teamId),
     queryFn: () => api.getTeamCost(teamId as number),
     enabled: teamId !== null,
   })
@@ -58,8 +60,7 @@ export function CostConfigurationPanel() {
       notifySuccess('Cost configuration saved.')
       setCurrency(data.currency)
       setManDayCost(String(data.man_day_cost))
-      queryClient.invalidateQueries({ queryKey: ['team-cost', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+      if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
     onError: (error: Error) => notifyError(error.message),
   })
@@ -85,14 +86,18 @@ export function CostConfigurationPanel() {
       <CardContent className="gap-4">
         {teamId === null ? (
           <p className="text-sm text-muted-foreground">Select a team to configure its costs.</p>
-        ) : costQuery.isLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Skeleton className="h-9 w-full max-w-md" />
-            <Skeleton className="h-9 w-full max-w-xs" />
-          </div>
-        ) : costQuery.isError ? (
-          <p className="text-sm text-destructive">{costQuery.error.message}</p>
         ) : (
+          <QueryPanelBody
+            isLoading={costQuery.isLoading}
+            isError={costQuery.isError}
+            error={costQuery.error}
+            skeleton={
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Skeleton className="h-9 w-full max-w-md" />
+                <Skeleton className="h-9 w-full max-w-xs" />
+              </div>
+            }
+          >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="cost-currency">Currency</Label>
@@ -127,6 +132,7 @@ export function CostConfigurationPanel() {
               />
             </div>
           </div>
+          </QueryPanelBody>
         )}
       </CardContent>
       {teamId !== null && costQuery.data && (

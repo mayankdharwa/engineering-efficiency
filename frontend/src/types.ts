@@ -59,15 +59,8 @@ export interface RefreshResult {
   message: string | null
 }
 
-export interface MemberMetricsOut {
-  linear_id: string | null
-  name: string
-  email: string | null
-  group_id: number | null
-  group_name: string | null
-  group_color: string | null
-  counts_toward_capacity: boolean
-  unavailable_days: number
+/** Shared point totals and ratios used by member and group metric rows. */
+export interface PointMetrics {
   capacity_points: number
   taken_points: number
   done_points: number
@@ -77,6 +70,17 @@ export interface MemberMetricsOut {
   planning_efficiency: number | null
   velocity: number | null
   bandwidth_efficiency: number | null
+}
+
+export interface MemberMetricsOut extends PointMetrics {
+  linear_id: string | null
+  name: string
+  email: string | null
+  group_id: number | null
+  group_name: string | null
+  group_color: string | null
+  counts_toward_capacity: boolean
+  unavailable_days: number
 }
 
 export interface VelocityTrendPointOut {
@@ -87,25 +91,18 @@ export interface VelocityTrendPointOut {
   velocity: number | null
 }
 
-export interface GroupMetricsOut {
+export interface GroupMetricsOut extends PointMetrics {
   group_id: number | null
   label: string
   color: string | null
   members: number
-  capacity_points: number
-  taken_points: number
-  done_points: number
-  adhoc_points: number
-  planned_points: number
-  unestimated_count: number
-  planning_efficiency: number | null
-  velocity: number | null
-  bandwidth_efficiency: number | null
   velocity_trend: VelocityTrendPointOut[]
 }
 
-export interface TeamStatsOut {
+/** Shared cycle header fields used by stats and cycle settings. */
+export interface CycleSnapshot {
   team_id: number
+  /** Cycle snapshot is loaded. */
   ready: boolean
   message: string | null
   cycle_id: number | null
@@ -118,6 +115,10 @@ export interface TeamStatsOut {
   default_working_days: number
   working_days_overridden: boolean
   points_per_day: number
+}
+
+export interface TeamStatsOut extends CycleSnapshot {
+  /** Elapsed working-day fraction 0..1. */
   progress: number
   total_taken_points: number
   total_done_points: number
@@ -156,22 +157,9 @@ export interface CycleOut {
   is_current: boolean
 }
 
-export interface CycleSettingsOut {
-  team_id: number
-  ready: boolean
-  message: string | null
-  cycle_id: number | null
-  cycle_linear_id: string | null
-  cycle_name: string | null
-  cycle_number: number | null
-  starts_at: string | null
-  ends_at: string | null
-  working_days: number
-  default_working_days: number
-  working_days_overridden: boolean
+export interface CycleSettingsOut extends CycleSnapshot {
   archived_at: string | null
   is_current: boolean
-  points_per_day: number
   groups: GroupOut[]
   members: CycleMemberOut[]
 }

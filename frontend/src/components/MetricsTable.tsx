@@ -1,13 +1,12 @@
 import { createColumnHelper } from '@tanstack/react-table'
+import { useMemo } from 'react'
 import { formatPoints } from '../lib/format'
 import { filterMembers } from '../lib/groups'
+import { createSharedMetricColumns } from '../lib/metricColumns'
 import { appTableFeatures } from '../lib/table'
 import type { MemberMetricsOut } from '../types'
-import { AvailablePointsCell } from './AvailablePointsCell'
-import { BandwidthCell } from './BandwidthCell'
 import { DataTable, type AppColumnDef } from './DataTable'
 import { GroupBadge } from './GroupBadge'
-import { PercentCell } from './PercentCell'
 
 const helper = createColumnHelper<typeof appTableFeatures, MemberMetricsOut>()
 
@@ -19,7 +18,7 @@ function isListed(member: MemberMetricsOut): boolean {
   return member.linear_id === null || member.counts_toward_capacity
 }
 
-const columns: AppColumnDef<MemberMetricsOut>[] = [
+const leadingColumns: AppColumnDef<MemberMetricsOut>[] = [
   helper.accessor('name', {
     header: 'Member',
     cell: (ctx) => {
@@ -39,49 +38,20 @@ const columns: AppColumnDef<MemberMetricsOut>[] = [
     header: 'Unavailable',
     cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}d</span>,
   }),
-  helper.accessor('bandwidth_efficiency', {
-    header: 'Bandwidth Efficiency',
-    cell: (ctx) => {
-      const member = ctx.row.original
-      return (
-        <BandwidthCell
-          taken={member.taken_points}
-          capacity={member.capacity_points}
-          ratio={member.bandwidth_efficiency}
-        />
-      )
-    },
-  }),
-  helper.accessor((row) => row.capacity_points - row.taken_points, {
-    id: 'available_points',
-    header: 'Available Points',
-    cell: (ctx) => <AvailablePointsCell available={ctx.getValue()} />,
-  }),
-  helper.accessor('done_points', {
-    header: 'Completed Points',
-    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
-  }),
-  helper.accessor('adhoc_points', {
-    header: 'Adhoc Points',
-    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
-  }),
-  helper.accessor('planning_efficiency', {
-    header: 'Planning Efficiency',
-    cell: (ctx) => <PercentCell value={ctx.getValue()} />,
-  }),
-  helper.accessor('velocity', {
-    header: 'Velocity',
-    cell: (ctx) => <PercentCell value={ctx.getValue()} />,
-  }),
 ]
 
 interface MetricsTableProps {
   members: MemberMetricsOut[]
   selected: Set<string>
+  pointsPerDay: number
 }
 
-export function MetricsTable({ members, selected }: MetricsTableProps) {
+export function MetricsTable({ members, selected, pointsPerDay }: MetricsTableProps) {
   const filtered = filterMembers(members, selected).filter(isListed)
+  const columns = useMemo(
+    () => [...leadingColumns, ...createSharedMetricColumns<MemberMetricsOut>(pointsPerDay)],
+    [pointsPerDay],
+  )
 
   return (
     <DataTable

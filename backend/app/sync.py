@@ -9,13 +9,17 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from .cycles import CycleMemberKey, format_cycle_label
+from .datetime_util import parse_iso_datetime
 from .linear_client import LinearClient
 from .models import (
     Cycle,
     CycleMembership,
     Issue,
     LinearConfig,
+    SyncKind,
     SyncRun,
+    SyncStatus,
     Team,
     TeamMember,
     utcnow,
@@ -50,7 +54,7 @@ def parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parse_iso_datetime(value)
     except ValueError:
         return None
 
@@ -272,11 +276,8 @@ def ensure_cycle_memberships(
             if previous is not None
             else bool(member.active and member.is_assignable)
         )
-        row = CycleMembership(
-            team_id=team.id,
-            cycle_id=cycle.id,
+        row = CycleMemberKey(team.id, cycle.id, member.linear_id).new_membership(
             member_id=member.id,
-            member_linear_id=member.linear_id,
             group_id=previous.group_id if previous is not None else None,
             counts_toward_capacity=counts,
             unavailable_days=0.0,
@@ -288,16 +289,13 @@ def ensure_cycle_memberships(
 
 def _cycle_label(cycle: dict[str, Any] | None, cycle_id: str | None) -> str:
     """Human label for a Linear cycle payload."""
-    if cycle is not None:
-        name = cycle.get("name")
-        if name:
-            return f"cycle '{name}'"
-        number = cycle.get("number")
-        if number is not None:
-            return f"cycle {number:g}"
-    if cycle_id:
-        return f"cycle '{cycle_id}'"
-    return "no active cycle"
+    payload = cycle or {}
+    return format_cycle_label(
+        payload.get("name"),
+        payload.get("number"),
+        cycle_id,
+        missing="no active cycle",
+    )
 
 
 def _stored_cycle(db: Session, team: Team) -> Cycle | None:
@@ -310,12 +308,8 @@ def _stored_cycle_label(db: Session, team: Team) -> str:
     """Human label for the cycle currently stored for a team."""
     stored = _stored_cycle(db, team)
     if stored is None:
-        return "no cycle"
-    if stored.name:
-        return f"cycle '{stored.name}'"
-    if stored.number is not None:
-        return f"cycle {stored.number}"
-    return f"cycle '{stored.linear_id}'"
+        return format_cycle_label(missing="no cycle")
+    return format_cycle_label(stored.name, stored.number, stored.linear_id)
 
 
 def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSummary:
@@ -336,7 +330,7 @@ def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSumma
     stored = _stored_cycle(db, team)
     stored_linear_id = stored.linear_id if stored is not None else None
     if team.current_cycle_id is not None and remote_cycle_id != stored_linear_id:
-        finalized = stored is not None and stored.archived_at is not None
+        finalized = stored is not None and stored.is_finalized
         if not finalized:
             raise CycleMismatchError(
                 "Linear is now on "
@@ -404,19 +398,23 @@ def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSumma
 def record_sync_run(
     db: Session,
     *,
-    kind: str,
-    status: str,
+    kind: SyncKind,
+    status: SyncStatus,
     team_id: int | None = None,
     message: str | None = None,
     issues_synced: int = 0,
     run: SyncRun | None = None,
 ) -> SyncRun:
     """Create or finalize a SyncRun row."""
+    kind_value = kind.value
+    status_value = status.value
     if run is None:
-        run = SyncRun(kind=kind, status=status, team_id=team_id, message=message)
+        run = SyncRun(
+            kind=kind_value, status=status_value, team_id=team_id, message=message
+        )
         db.add(run)
     else:
-        run.status = status
+        run.status = status_value
         run.message = message
         run.issues_synced = issues_synced
         run.finished_at = utcnow()

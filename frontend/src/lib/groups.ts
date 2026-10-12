@@ -2,7 +2,7 @@ import type { GroupMetricsOut, MemberMetricsOut, VelocityTrendPointOut } from '.
 
 /** Sentinel value for the "All groups" option in the filter select. */
 export const ALL_GROUPS_KEY = '__all__'
-/** Filter key for members who are not assigned to any group. */
+/** Filter key / Select sentinel for members who are not assigned to any group. */
 export const UNASSIGNED_KEY = 'unassigned'
 
 /** Stable filter key for a group id (or the unassigned bucket). */

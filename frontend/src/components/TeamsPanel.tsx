@@ -11,20 +11,21 @@ import {
 } from '@/components/ui/card'
 import { api } from '../api'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import { TeamsTable } from './TeamsTable'
 
 export function TeamsPanel() {
   const queryClient = useQueryClient()
 
-  const configQuery = useQuery({ queryKey: ['config'], queryFn: api.getConfig })
-  const teamsQuery = useQuery({ queryKey: ['teams'], queryFn: api.listTeams })
+  const configQuery = useQuery({ queryKey: queryKeys.config, queryFn: api.getConfig })
+  const teamsQuery = useQuery({ queryKey: queryKeys.teams, queryFn: api.listTeams })
   const teams = teamsQuery.data ?? []
 
   const importMutation = useMutation({
     mutationFn: api.importTeams,
     onSuccess: (imported) => {
       notifySuccess(`Imported ${imported.length} team(s) from Linear.`)
-      queryClient.invalidateQueries({ queryKey: ['teams'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.teams })
     },
     onError: (error: Error) => notifyError(error.message),
   })
@@ -33,10 +34,7 @@ export function TeamsPanel() {
     mutationFn: (teamId: number) => api.refreshTeam(teamId),
     onSuccess: (result) => {
       notifySuccess(result.message ?? `Synced ${result.issues_synced} issue(s).`)
-      queryClient.invalidateQueries({ queryKey: ['teams'] })
-      queryClient.invalidateQueries({ queryKey: ['issues', result.team_id] })
-      queryClient.invalidateQueries({ queryKey: ['cycle', result.team_id] })
-      queryClient.invalidateQueries({ queryKey: ['stats', result.team_id] })
+      invalidateTeamData(queryClient, result.team_id)
     },
     onError: (error: Error) => notifyError(error.message),
   })
@@ -51,10 +49,7 @@ export function TeamsPanel() {
     onSuccess: (_result, teamId) => {
       const team = teams.find((candidate) => candidate.id === teamId)
       notifySuccess(team ? `Deleted ${team.name}.` : 'Team deleted.')
-      queryClient.invalidateQueries({ queryKey: ['teams'] })
-      queryClient.removeQueries({ queryKey: ['issues', teamId] })
-      queryClient.removeQueries({ queryKey: ['cycle', teamId] })
-      queryClient.removeQueries({ queryKey: ['stats', teamId] })
+      invalidateTeamData(queryClient, teamId, { remove: true })
     },
     onError: (error: Error) => notifyError(error.message),
   })

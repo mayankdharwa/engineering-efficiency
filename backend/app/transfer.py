@@ -15,6 +15,7 @@ from sqlalchemy import DateTime, delete, inspect, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.types import TypeDecorator
 
+from .datetime_util import parse_iso_datetime
 from .models import (
     CURRENT_SCHEMA_VERSION,
     AppSettings,
@@ -197,7 +198,7 @@ def _parse_dt(value: object) -> datetime:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
     if isinstance(value, str):
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = parse_iso_datetime(value)
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=UTC)
         return parsed.astimezone(UTC)

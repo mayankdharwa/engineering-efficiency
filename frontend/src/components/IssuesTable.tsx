@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { useTimezone } from '../hooks/useAppSettings'
 import { formatDateTime, formatPoints } from '../lib/format'
+import { badgeVariantForState, isCompletedState } from '../lib/issueState'
 import { appTableFeatures } from '../lib/table'
 import type { IssueOut } from '../types'
 import { DataTable, type AppColumnDef } from './DataTable'
@@ -15,21 +16,6 @@ const MAX_LABEL_LENGTH = 50
 function truncate(value: string | null, max = MAX_LABEL_LENGTH): string {
   if (!value) return ''
   return value.length > max ? `${value.slice(0, max)}...` : value
-}
-
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
-
-function stateVariant(stateType: string | null): BadgeVariant {
-  switch (stateType) {
-    case 'completed':
-      return 'default'
-    case 'started':
-      return 'secondary'
-    case 'canceled':
-      return 'destructive'
-    default:
-      return 'outline'
-  }
 }
 
 const columns = (timezone: string): AppColumnDef<IssueOut>[] => [
@@ -50,7 +36,7 @@ const columns = (timezone: string): AppColumnDef<IssueOut>[] => [
     header: 'State',
     cell: (ctx) =>
       ctx.getValue() ? (
-        <Badge variant={stateVariant(ctx.row.original.state_type)}>{ctx.getValue()}</Badge>
+        <Badge variant={badgeVariantForState(ctx.row.original.state_type)}>{ctx.getValue()}</Badge>
       ) : (
         <span className="text-muted-foreground">—</span>
       ),
@@ -96,7 +82,7 @@ export function IssuesTable({ issues, showDone }: IssuesTableProps) {
   const tableColumns = useMemo(() => columns(timezone), [timezone])
   const visible = showDone
     ? issues
-    : issues.filter((issue) => issue.state_type !== 'completed')
+    : issues.filter((issue) => !isCompletedState(issue.state_type))
 
   return (
     <DataTable

@@ -1,8 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useEffect, useState, type ReactNode } from 'react'
-import { RefreshCwIcon } from 'lucide-react'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { buttonVariants } from '@/components/ui/button'
 import {
   Card,
   CardAction,
@@ -12,41 +10,19 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { api } from '../api'
-import { CycleSelect } from '../components/CycleSelect'
-import { GroupFilterSelect } from '../components/GroupFilterSelect'
+import { DashboardToolbar } from '../components/DashboardToolbar'
 import { GroupMetricsTable } from '../components/GroupMetricsTable'
 import { IssuesTable } from '../components/IssuesTable'
 import { MetricCharts } from '../components/MetricCharts'
 import { MetricsTable } from '../components/MetricsTable'
 import { VelocityTrendChart } from '../components/VelocityTrendChart'
 import { useTimezone } from '../hooks/useAppSettings'
-import {
-  combineGroups,
-  filterMembers,
-  isAllGroups,
-} from '../lib/groups'
-import {
-  formatCycle,
-  formatDate,
-  formatMoney,
-  formatPercent,
-  formatPoints,
-  formatRelative,
-} from '../lib/format'
-import type { GroupOut } from '../types'
-
-/** A man-day's worth of work; costs are derived from points at this rate. */
-const POINTS_PER_DAY = 2
+import { useDashboardQueries } from '../hooks/useDashboardQueries'
+import { buildDashboardView } from '../lib/dashboardMetrics'
+import { formatMoney, formatPercent, formatPoints } from '../lib/format'
+import { pickDefaultTeamId } from '../lib/selection'
 
 function StatCard({
   label,
@@ -71,117 +47,43 @@ function StatCard({
 }
 
 export function DashboardPage() {
-  const queryClient = useQueryClient()
   const timezone = useTimezone()
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
-  const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null)
+  // Empty set means all groups (see isAllGroups / groupKey).
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
   const [showDone, setShowDone] = useState(false)
 
-  const teamsQuery = useQuery({ queryKey: ['teams'], queryFn: api.listTeams })
+  const {
+    teamsQuery,
+    cyclesQuery,
+    issuesQuery,
+    statsQuery,
+    refreshMutation,
+    selectedCycleId,
+    setSelectedCycleId,
+  } = useDashboardQueries(selectedTeamId)
+
   const teams = teamsQuery.data ?? []
+  const cycles = cyclesQuery.data ?? []
+  const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null
+  const selectedCycle = cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
+  const stats = statsQuery.data
+  const view = useMemo(
+    () => buildDashboardView(stats, selectedGroups),
+    [stats, selectedGroups],
+  )
 
   useEffect(() => {
-    if (teams.length === 0) return
-    // Fall back to the first team when nothing is selected or the selected
-    // team no longer exists (e.g. it was deleted on the config page).
-    if (selectedTeamId === null || !teams.some((team) => team.id === selectedTeamId)) {
-      setSelectedTeamId(teams[0].id)
-    }
+    const next = pickDefaultTeamId(teams, selectedTeamId)
+    if (next !== selectedTeamId) setSelectedTeamId(next)
   }, [selectedTeamId, teams])
-
-  const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null
 
   // Group ids are team-specific, so clear the filter when the team changes.
   useEffect(() => {
     setSelectedGroups(new Set())
-    setSelectedCycleId(null)
   }, [selectedTeamId])
 
-  const cyclesQuery = useQuery({
-    queryKey: ['cycles', selectedTeamId],
-    queryFn: () => api.listCycles(selectedTeamId as number),
-    enabled: selectedTeamId !== null,
-  })
-  const cycles = cyclesQuery.data ?? []
-
-  useEffect(() => {
-    if (cycles.length === 0) return
-    if (selectedCycleId === null || !cycles.some((cycle) => cycle.id === selectedCycleId)) {
-      const current = cycles.find((cycle) => cycle.is_current)
-      setSelectedCycleId(current?.id ?? cycles[0].id)
-    }
-  }, [cycles, selectedCycleId])
-
-  const selectedCycle = cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
-
-  const issuesQuery = useQuery({
-    queryKey: ['issues', selectedTeamId, selectedCycleId],
-    queryFn: () => api.listIssues(selectedTeamId as number, selectedCycleId),
-    enabled: selectedTeamId !== null && selectedCycleId !== null,
-  })
-
-  const statsQuery = useQuery({
-    queryKey: ['stats', selectedTeamId, selectedCycleId],
-    queryFn: () => api.getStats(selectedTeamId as number, selectedCycleId),
-    enabled: selectedTeamId !== null && selectedCycleId !== null,
-  })
-
-  const refreshMutation = useMutation({
-    mutationFn: (teamId: number) => api.refreshTeam(teamId),
-    onSuccess: (_result, teamId) => {
-      queryClient.invalidateQueries({ queryKey: ['teams'] })
-      queryClient.invalidateQueries({ queryKey: ['issues', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['cycles', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
-    },
-  })
-
-  const stats = statsQuery.data
-  const allGroups = isAllGroups(selectedGroups)
-
-  // When specific groups are selected, combine their precomputed totals using
-  // the same ratio-of-totals logic the backend uses for the team.
-  const groupSummary =
-    stats && !allGroups ? combineGroups(stats.groups, selectedGroups, stats.progress) : null
-
-  // Charts show only the selected groups' members (or everyone for "All").
-  const chartMembers = filterMembers(stats?.members ?? [], selectedGroups)
-
-  const summary = groupSummary
-    ? groupSummary
-    : {
-        planning: stats?.planning_efficiency ?? null,
-        velocity: stats?.velocity ?? null,
-        bandwidth: stats?.bandwidth_efficiency ?? null,
-        planned: stats?.total_planned_points ?? 0,
-        taken: stats?.total_taken_points ?? 0,
-        done: stats?.total_done_points ?? 0,
-        capacity: stats?.total_capacity_points ?? 0,
-        adhoc: stats?.total_adhoc_points ?? 0,
-        unestimated: stats?.unestimated_issues ?? 0,
-      }
-
-  // The trend follows the same group selection as the cards and charts.
-  const velocityTrend = groupSummary ? groupSummary.trend : (stats?.velocity_trend ?? [])
-
-  // Defined groups (everything except the synthetic Unassigned bucket).
-  const groupOptions: GroupOut[] = (stats?.groups ?? [])
-    .filter((group) => group.group_id !== null)
-    .map((group) => ({
-      id: group.group_id as number,
-      name: group.label,
-      color: group.color ?? '',
-    }))
-
-  // Costs: each man-day is POINTS_PER_DAY points, so points convert to man-days
-  // at 1 / POINTS_PER_DAY. Unutilized capacity is capacity that was not taken.
-  const manDayCost = stats?.man_day_cost ?? 0
-  const currency = stats?.currency ?? '$'
-  const adhocCost = (summary.adhoc / POINTS_PER_DAY) * manDayCost
-  const unutilizedPoints = Math.max(0, summary.capacity - summary.taken)
-  const unutilizedCost = (unutilizedPoints / POINTS_PER_DAY) * manDayCost
+  const { summary, costs } = view
 
   return (
     <div className="flex flex-col gap-6">
@@ -203,74 +105,22 @@ export function DashboardPage() {
         </Card>
       ) : (
         <>
-          <div className="flex flex-wrap items-start gap-4">
-            <div className="flex flex-wrap items-start gap-4">
-              <div className="w-64 shrink-0 sm:w-72">
-                <Select
-                  items={teams.map((team) => ({
-                    label: `${team.name} (${team.key})`,
-                    value: team.id,
-                  }))}
-                  value={selectedTeamId}
-                  onValueChange={(value) => setSelectedTeamId(value as number | null)}
-                >
-                  <SelectTrigger id="team-select" className="w-full" aria-label="Team">
-                    <SelectValue placeholder="Select a team" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teams.map((team) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name} ({team.key})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedTeam && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {selectedTeam.issue_count} current-cycle issue(s) · synced{' '}
-                    {formatRelative(selectedTeam.last_synced_at)}
-                  </p>
-                )}
-              </div>
-              <CycleSelect
-                cycles={cycles}
-                value={selectedCycleId}
-                onChange={setSelectedCycleId}
-                labelled={false}
-              />
-              <div className="w-44 shrink-0">
-                <GroupFilterSelect
-                  groups={groupOptions}
-                  selected={selectedGroups}
-                  onChange={setSelectedGroups}
-                />
-              </div>
-              <Button
-                type="button"
-                disabled={selectedTeamId === null || refreshMutation.isPending}
-                onClick={() => selectedTeamId !== null && refreshMutation.mutate(selectedTeamId)}
-              >
-                <RefreshCwIcon
-                  className={refreshMutation.isPending ? 'animate-spin' : undefined}
-                />
-                {refreshMutation.isPending ? 'Refreshing…' : 'Refresh'}
-              </Button>
-            </div>
-            {stats?.ready && (
-              <div className="ml-auto text-right leading-tight">
-                <div className="text-xl font-semibold tabular-nums">
-                  {formatCycle(stats.cycle_name, stats.cycle_number)}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {formatDate(stats.starts_at, timezone)} →{' '}
-                  {formatDate(stats.ends_at, timezone)} ·{' '}
-                  {stats.working_days_overridden
-                    ? `${formatPoints(stats.working_days)} working days (adjusted)`
-                    : `${formatPoints(stats.working_days)} working days`}
-                </div>
-              </div>
-            )}
-          </div>
+          <DashboardToolbar
+            teams={teams}
+            selectedTeam={selectedTeam}
+            selectedTeamId={selectedTeamId}
+            onTeamChange={setSelectedTeamId}
+            cycles={cycles}
+            selectedCycleId={selectedCycleId}
+            onCycleChange={setSelectedCycleId}
+            groupOptions={view.groupOptions}
+            selectedGroups={selectedGroups}
+            onGroupsChange={setSelectedGroups}
+            refreshPending={refreshMutation.isPending}
+            onRefresh={() => selectedTeamId !== null && refreshMutation.mutate(selectedTeamId)}
+            stats={stats}
+            timezone={timezone}
+          />
 
           {statsQuery.isLoading ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -324,22 +174,22 @@ export function DashboardPage() {
                 />
                 <StatCard
                   label="Cost of adhoc work"
-                  value={formatMoney(adhocCost, currency)}
+                  value={formatMoney(costs.adhocCost, costs.currency)}
                   hint={
-                    manDayCost > 0
+                    costs.manDayCost > 0
                       ? `${formatPoints(summary.adhoc)} pts adhoc · ${formatMoney(
-                          manDayCost,
-                          currency,
+                          costs.manDayCost,
+                          costs.currency,
                         )}/day`
                       : 'Set a man-day cost in Configuration'
                   }
                 />
                 <StatCard
                   label="Unutilized capacity cost"
-                  value={formatMoney(unutilizedCost, currency)}
+                  value={formatMoney(costs.unutilizedCost, costs.currency)}
                   hint={
-                    manDayCost > 0
-                      ? `${formatPoints(unutilizedPoints)} of ${formatPoints(
+                    costs.manDayCost > 0
+                      ? `${formatPoints(costs.unutilizedPoints)} of ${formatPoints(
                           summary.capacity,
                         )} pts unallocated`
                       : 'Set a man-day cost in Configuration'
@@ -347,9 +197,12 @@ export function DashboardPage() {
                 />
               </div>
 
-              <MetricCharts members={chartMembers} />
+              <MetricCharts
+                members={view.chartMembers}
+                fullCapacityPoints={view.fullCapacityPoints}
+              />
 
-              <VelocityTrendChart points={velocityTrend} />
+              <VelocityTrendChart points={view.velocityTrend} />
 
               <Card>
                 <CardHeader className="border-b">
@@ -360,7 +213,11 @@ export function DashboardPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <GroupMetricsTable groups={stats.groups} selected={selectedGroups} />
+                  <GroupMetricsTable
+                    groups={stats.groups}
+                    selected={selectedGroups}
+                    pointsPerDay={view.pointsPerDay}
+                  />
                 </CardContent>
               </Card>
 
@@ -372,7 +229,11 @@ export function DashboardPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <MetricsTable members={stats.members} selected={selectedGroups} />
+                  <MetricsTable
+                    members={stats.members}
+                    selected={selectedGroups}
+                    pointsPerDay={view.pointsPerDay}
+                  />
                 </CardContent>
               </Card>
             </>

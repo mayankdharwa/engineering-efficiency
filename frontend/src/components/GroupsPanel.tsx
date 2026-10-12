@@ -14,8 +14,10 @@ import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { isHexColor, parseHexColor } from '../lib/color'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import type { GroupOut } from '../types'
 import { GroupBadge } from './GroupBadge'
+import { QueryPanelBody } from './QueryPanelBody'
 import { TeamSelect } from './TeamSelect'
 
 const DEFAULT_GROUP_COLORS = [
@@ -77,7 +79,7 @@ export function GroupsPanel() {
   const { teamId } = useConfigTeam()
 
   const groupsQuery = useQuery({
-    queryKey: ['groups', teamId],
+    queryKey: queryKeys.groups(teamId),
     queryFn: () => api.listGroups(teamId as number),
     enabled: teamId !== null,
   })
@@ -97,9 +99,8 @@ export function GroupsPanel() {
   }, [groupsQuery.data])
 
   function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ['groups', teamId] })
-    queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
-    queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+    if (teamId === null) return
+    invalidateTeamData(queryClient, teamId)
   }
 
   const createGroup = useMutation({
@@ -159,14 +160,18 @@ export function GroupsPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
-          {teamId === null ? null : groupsQuery.isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-8 w-full max-w-md" />
-              <Skeleton className="h-8 w-full max-w-md" />
-            </div>
-          ) : groupsQuery.isError ? (
-            <p className="text-sm text-destructive">{groupsQuery.error.message}</p>
-          ) : (
+          {teamId === null ? null : (
+          <QueryPanelBody
+            isLoading={groupsQuery.isLoading}
+            isError={groupsQuery.isError}
+            error={groupsQuery.error}
+            skeleton={
+              <div className="space-y-3">
+                <Skeleton className="h-8 w-full max-w-md" />
+                <Skeleton className="h-8 w-full max-w-md" />
+              </div>
+            }
+          >
             <div className="space-y-3">
               {groups.length > 0 && (
                 <div className="space-y-2">
@@ -268,6 +273,7 @@ export function GroupsPanel() {
                 </Button>
               </div>
             </div>
+          </QueryPanelBody>
           )}
         </CardContent>
       </Card>

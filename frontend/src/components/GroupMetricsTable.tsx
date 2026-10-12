@@ -1,17 +1,15 @@
 import { createColumnHelper } from '@tanstack/react-table'
+import { useMemo } from 'react'
 import { selectGroups } from '../lib/groups'
-import { formatPoints } from '../lib/format'
+import { createSharedMetricColumns } from '../lib/metricColumns'
 import { appTableFeatures } from '../lib/table'
 import type { GroupMetricsOut } from '../types'
-import { AvailablePointsCell } from './AvailablePointsCell'
-import { BandwidthCell } from './BandwidthCell'
 import { DataTable, type AppColumnDef } from './DataTable'
 import { GroupBadge } from './GroupBadge'
-import { PercentCell } from './PercentCell'
 
 const helper = createColumnHelper<typeof appTableFeatures, GroupMetricsOut>()
 
-const columns: AppColumnDef<GroupMetricsOut>[] = [
+const leadingColumns: AppColumnDef<GroupMetricsOut>[] = [
   helper.accessor('label', {
     header: 'Group',
     cell: (ctx) => {
@@ -26,48 +24,20 @@ const columns: AppColumnDef<GroupMetricsOut>[] = [
     header: 'People',
     cell: (ctx) => <span className="tabular-nums">{ctx.getValue()}</span>,
   }),
-  helper.accessor('bandwidth_efficiency', {
-    header: 'Bandwidth Efficiency',
-    cell: (ctx) => {
-      const group = ctx.row.original
-      return (
-        <BandwidthCell
-          taken={group.taken_points}
-          capacity={group.capacity_points}
-          ratio={group.bandwidth_efficiency}
-        />
-      )
-    },
-  }),
-  helper.accessor((row) => row.capacity_points - row.taken_points, {
-    id: 'available_points',
-    header: 'Available Points',
-    cell: (ctx) => <AvailablePointsCell available={ctx.getValue()} />,
-  }),
-  helper.accessor('done_points', {
-    header: 'Completed Points',
-    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
-  }),
-  helper.accessor('adhoc_points', {
-    header: 'Adhoc Points',
-    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
-  }),
-  helper.accessor('planning_efficiency', {
-    header: 'Planning Efficiency',
-    cell: (ctx) => <PercentCell value={ctx.getValue()} />,
-  }),
-  helper.accessor('velocity', {
-    header: 'Velocity',
-    cell: (ctx) => <PercentCell value={ctx.getValue()} />,
-  }),
 ]
 
 interface GroupMetricsTableProps {
   groups: GroupMetricsOut[]
   selected: Set<string>
+  pointsPerDay: number
 }
 
-export function GroupMetricsTable({ groups, selected }: GroupMetricsTableProps) {
+export function GroupMetricsTable({ groups, selected, pointsPerDay }: GroupMetricsTableProps) {
+  const columns = useMemo(
+    () => [...leadingColumns, ...createSharedMetricColumns<GroupMetricsOut>(pointsPerDay)],
+    [pointsPerDay],
+  )
+
   return (
     <DataTable
       columns={columns}

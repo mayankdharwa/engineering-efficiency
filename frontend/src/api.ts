@@ -16,6 +16,17 @@ import type {
 
 const BASE = '/api'
 
+async function readErrorDetail(response: Response): Promise<string> {
+  let detail = response.statusText
+  try {
+    const body = (await response.json()) as { detail?: string }
+    detail = body.detail ?? detail
+  } catch {
+    // response body was not JSON; keep the status text
+  }
+  return detail || `Request failed (${response.status})`
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -23,14 +34,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    let detail = response.statusText
-    try {
-      const body = (await response.json()) as { detail?: string }
-      detail = body.detail ?? detail
-    } catch {
-      // response body was not JSON; keep the status text
-    }
-    throw new Error(detail || `Request failed (${response.status})`)
+    throw new Error(await readErrorDetail(response))
   }
 
   if (response.status === 204) {
@@ -125,14 +129,7 @@ export const api = {
   downloadExport: async () => {
     const response = await fetch(`${BASE}/config/export`)
     if (!response.ok) {
-      let detail = response.statusText
-      try {
-        const body = (await response.json()) as { detail?: string }
-        detail = body.detail ?? detail
-      } catch {
-        // response body was not JSON; keep the status text
-      }
-      throw new Error(detail || `Request failed (${response.status})`)
+      throw new Error(await readErrorDetail(response))
     }
     const blob = await response.blob()
     const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')

@@ -8,6 +8,7 @@ also stored so nothing is lost.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
@@ -21,6 +22,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base, IntegerPK, UTCDateTime
@@ -31,6 +33,17 @@ CURRENT_SCHEMA_VERSION = 3
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class SyncKind(StrEnum):
+    TEAMS = "teams"
+    ISSUES = "issues"
+
+
+class SyncStatus(StrEnum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    ERROR = "error"
 
 
 class SchemaVersion(Base):
@@ -160,6 +173,10 @@ class Issue(Base):
     team: Mapped[Team] = relationship(back_populates="issues")
     cycle: Mapped[Cycle | None] = relationship(back_populates="issues")
 
+    @property
+    def is_completed(self) -> bool:
+        return self.state_type == "completed"
+
 
 class SyncRun(Base):
     """Audit trail of every download/refresh, surfaced in the UI."""
@@ -170,8 +187,8 @@ class SyncRun(Base):
     team_id: Mapped[int | None] = mapped_column(
         ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    kind: Mapped[str] = mapped_column(String(32))  # "teams" | "issues"
-    status: Mapped[str] = mapped_column(String(32))  # "running" | "success" | "error"
+    kind: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32))
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     issues_synced: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
@@ -216,6 +233,15 @@ class Cycle(Base):
 
     team: Mapped[Team] = relationship(back_populates="cycles", foreign_keys=[team_id])
     issues: Mapped[list[Issue]] = relationship(back_populates="cycle")
+
+    @hybrid_property
+    def is_finalized(self) -> bool:
+        return self.archived_at is not None
+
+    @is_finalized.inplace.expression
+    @classmethod
+    def _is_finalized_expression(cls):
+        return cls.archived_at.is_not(None)
 
 
 class TeamCost(Base):

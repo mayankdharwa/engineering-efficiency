@@ -28,13 +28,13 @@ import {
 } from '@/components/ui/table'
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
+import { UNASSIGNED_KEY } from '../lib/groups'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import type { CycleSettingsIn, GroupOut } from '../types'
 import { CostConfigurationPanel } from './CostConfigurationPanel'
+import { QueryPanelBody } from './QueryPanelBody'
 import { TeamSelect } from './TeamSelect'
-
-/** Sentinel Select value for "no group". */
-const NO_GROUP = 'unset'
 
 /** Per-team member configuration: group assignment, capacity and planned leave. */
 export function TeamConfigurationPanel() {
@@ -42,26 +42,26 @@ export function TeamConfigurationPanel() {
   const { teamId } = useConfigTeam()
 
   const cycleQuery = useQuery({
-    queryKey: ['cycle', teamId],
+    queryKey: queryKeys.cycle(teamId),
     queryFn: () => api.getCycleSettings(teamId as number),
     enabled: teamId !== null,
   })
 
-  const [availability, setAvailability] = useState<Record<string, string>>({})
+  const [availability, setAvailability] = useState<Record<string, number>>({})
   const [counts, setCounts] = useState<Record<string, boolean>>({})
   const [assignments, setAssignments] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const data = cycleQuery.data
     if (!data) return
-    const next: Record<string, string> = {}
+    const next: Record<string, number> = {}
     const nextCounts: Record<string, boolean> = {}
     const nextAssignments: Record<string, string> = {}
     for (const member of data.members) {
-      next[member.linear_id] = String(member.unavailable_days)
+      next[member.linear_id] = member.unavailable_days
       nextCounts[member.linear_id] = member.counts_toward_capacity
       nextAssignments[member.linear_id] =
-        member.group_id === null ? NO_GROUP : String(member.group_id)
+        member.group_id === null ? UNASSIGNED_KEY : String(member.group_id)
     }
     setAvailability(next)
     setCounts(nextCounts)
@@ -73,8 +73,7 @@ export function TeamConfigurationPanel() {
       api.updateCycleSettings(teamId as number, payload),
     onSuccess: () => {
       notifySuccess('Team configuration saved.')
-      queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+      if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
     onError: (error: Error) => notifyError(error.message),
   })
@@ -84,7 +83,7 @@ export function TeamConfigurationPanel() {
   const groups: GroupOut[] = cycle?.groups ?? []
 
   const groupItems = [
-    { label: 'Not set', value: NO_GROUP },
+    { label: 'Not set', value: UNASSIGNED_KEY },
     ...groups.map((group) => ({ label: group.name, value: String(group.id) })),
   ]
 
@@ -92,25 +91,25 @@ export function TeamConfigurationPanel() {
   // cycle. A fractional legacy value is kept as an option so it still displays.
   const maxUnavailable = Math.max(0, Math.floor(cycle?.working_days ?? 0))
 
-  function unavailableItems(current: string) {
-    const options = Array.from({ length: maxUnavailable + 1 }, (_, day) => String(day))
-    if (current && !options.includes(current)) {
+  function unavailableItems(current: number) {
+    const options = Array.from({ length: maxUnavailable + 1 }, (_, day) => day)
+    if (!options.includes(current)) {
       options.push(current)
-      options.sort((a, b) => Number(a) - Number(b))
+      options.sort((a, b) => a - b)
     }
-    return options.map((value) => ({ label: value, value }))
+    return options.map((value) => ({ label: String(value), value: String(value) }))
   }
 
   function handleSave() {
     if (!cycle) return
     saveMutation.mutate({
       members: cycle.members.map((member) => {
-        const assigned = assignments[member.linear_id] ?? NO_GROUP
+        const assigned = assignments[member.linear_id] ?? UNASSIGNED_KEY
         return {
           linear_id: member.linear_id,
-          unavailable_days: Number(availability[member.linear_id] || 0),
+          unavailable_days: availability[member.linear_id] ?? 0,
           counts_toward_capacity: counts[member.linear_id] ?? true,
-          group_id: assigned === NO_GROUP ? null : Number(assigned),
+          group_id: assigned === UNASSIGNED_KEY ? null : Number(assigned),
         }
       }),
     })
@@ -131,15 +130,18 @@ export function TeamConfigurationPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
-          {teamId === null ? null : cycleQuery.isLoading ? (
-            <Skeleton className="h-40 w-full" />
-          ) : cycleQuery.isError ? (
-            <p className="text-sm text-destructive">{cycleQuery.error.message}</p>
-          ) : !cycle?.ready ? (
-            <p className="text-sm text-muted-foreground">
-              {cycle?.message ?? 'Refresh this team in Linear Setup to download its membership.'}
-            </p>
-          ) : (
+          {teamId === null ? null : (
+          <QueryPanelBody
+            isLoading={cycleQuery.isLoading}
+            isError={cycleQuery.isError}
+            error={cycleQuery.error}
+            ready={Boolean(cycle?.ready)}
+            notReadyMessage={
+              cycle?.message ?? 'Refresh this team in Linear Setup to download its membership.'
+            }
+            skeleton={<Skeleton className="h-40 w-full" />}
+          >
+            {cycle && (
             <div className="overflow-hidden rounded-lg border">
               <Table>
                 <TableHeader>
@@ -161,7 +163,7 @@ export function TeamConfigurationPanel() {
                   ) : (
                     cycle.members.map((member) => {
                       const counted = counts[member.linear_id] ?? true
-                      const unavailable = availability[member.linear_id] ?? '0'
+                      const unavailable = availability[member.linear_id] ?? 0
                       const dayItems = unavailableItems(unavailable)
                       return (
                         <TableRow key={member.linear_id}>
@@ -174,7 +176,7 @@ export function TeamConfigurationPanel() {
                           <TableCell>
                             <Select
                               items={groupItems}
-                              value={assignments[member.linear_id] ?? NO_GROUP}
+                              value={assignments[member.linear_id] ?? UNASSIGNED_KEY}
                               disabled={snapshotLocked}
                               onValueChange={(value) =>
                                 setAssignments((prev) => ({
@@ -215,12 +217,12 @@ export function TeamConfigurationPanel() {
                           <TableCell>
                             <Select
                               items={dayItems}
-                              value={unavailable}
+                              value={String(unavailable)}
                               disabled={!counted || snapshotLocked}
                               onValueChange={(value) =>
                                 setAvailability((prev) => ({
                                   ...prev,
-                                  [member.linear_id]: value as string,
+                                  [member.linear_id]: Number(value),
                                 }))
                               }
                             >
@@ -247,6 +249,8 @@ export function TeamConfigurationPanel() {
                 </TableBody>
               </Table>
             </div>
+            )}
+          </QueryPanelBody>
           )}
         </CardContent>
         {cycle?.ready && (

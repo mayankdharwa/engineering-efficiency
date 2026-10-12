@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { formatPercent } from '../lib/format'
+import { formatPercent, formatPoints } from '../lib/format'
 import type { MemberMetricsOut } from '../types'
 
 // Theme-driven colors: charts follow the shadcn preset (light/dark aware).
@@ -24,8 +24,6 @@ const COLOR_CAPACITY = 'var(--muted-foreground)'
 const MAX_VELOCITY = 1.2
 /** Where a truncated bar stops, leaving the 120% guide line visible. */
 const TRUNCATED_VELOCITY = 1.17
-/** A full-time cycle is 10 working days × 2 points. */
-const FULL_CAPACITY_POINTS = 20
 
 function chartHeight(count: number): number {
   return Math.max(160, count * 34 + 56)
@@ -35,13 +33,14 @@ const percentFormat = (value: number) => formatPercent(value)
 
 interface MetricChartsProps {
   members: MemberMetricsOut[]
+  fullCapacityPoints: number
 }
 
 /**
  * The three core cycle charts. Each definition is memoized against the data it
  * captures (definition identity is the chart's update boundary).
  */
-export function MetricCharts({ members }: MetricChartsProps) {
+export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps) {
   // Charts only show people who count toward capacity; not-counted members and
   // the synthetic "Unassigned" aggregate are excluded.
   const counted = useMemo(
@@ -68,8 +67,8 @@ export function MetricCharts({ members }: MetricChartsProps) {
         // the left like water. When taken exceeds capacity it visibly overflows.
         barX(capacityRows, { x: 'points', y: 'member', fill: COLOR_CAPACITY }),
         barX(takenRows, { x: 'points', y: 'member', fill: COLOR_TAKEN }),
-        // A full-time cycle is 20 points; mark it with a dotted reference line.
-        ruleX([FULL_CAPACITY_POINTS], {
+        // Full-time capacity (working days × points per day) as a dotted line.
+        ruleX([fullCapacityPoints], {
           stroke: 'var(--foreground)',
           strokeDasharray: '2 3',
         }),
@@ -85,7 +84,7 @@ export function MetricCharts({ members }: MetricChartsProps) {
       },
       tooltip,
     })
-  }, [counted])
+  }, [counted, fullCapacityPoints])
 
   const velocity = useMemo(() => {
     const rows = workingMembers.map((member) => {
@@ -184,7 +183,8 @@ export function MetricCharts({ members }: MetricChartsProps) {
         <CardHeader>
           <CardTitle>Capacity vs points taken</CardTitle>
           <CardDescription>
-            Capacity is the full bar; points taken fill it from the left. Dotted = 20 pts.
+            Capacity is the full bar; points taken fill it from the left. Dotted ={' '}
+            {formatPoints(fullCapacityPoints)} pts.
           </CardDescription>
         </CardHeader>
         <CardContent>

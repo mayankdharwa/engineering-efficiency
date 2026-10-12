@@ -19,8 +19,9 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
-import { APP_SETTINGS_QUERY_KEY, useAppSettings } from '../hooks/useAppSettings'
+import { useAppSettings } from '../hooks/useAppSettings'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { APP_SETTINGS_QUERY_KEY, queryKeys } from '../lib/queryKeys'
 
 /** Format a 0-23 hour as a localized time label (e.g. "7:00 PM"). */
 function formatHour(hour: number): string {
@@ -64,7 +65,7 @@ export function TimeConfigurationPanel() {
       setTimezone(data.timezone)
       setCutoffHour(data.day_cutoff_hour)
       queryClient.invalidateQueries({ queryKey: APP_SETTINGS_QUERY_KEY })
-      queryClient.invalidateQueries({ queryKey: ['stats'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.allStats })
     },
     onError: (error: Error) => notifyError(error.message),
   })

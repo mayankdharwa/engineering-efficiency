@@ -1,12 +1,6 @@
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useConfigTeam } from '../hooks/useConfigTeam'
+import { TeamPicker } from './TeamPicker'
 
 /** Shared team picker used by the per-team Configuration sections. */
 export function TeamSelect() {
@@ -23,25 +17,7 @@ export function TeamSelect() {
   return (
     <div className="max-w-xs space-y-2">
       <Label htmlFor="config-team">Team</Label>
-      <Select
-        items={teams.map((team) => ({
-          label: `${team.name} (${team.key})`,
-          value: team.id,
-        }))}
-        value={teamId}
-        onValueChange={(value) => setTeamId(value as number | null)}
-      >
-        <SelectTrigger id="config-team" className="w-full">
-          <SelectValue placeholder="Select a team" />
-        </SelectTrigger>
-        <SelectContent>
-          {teams.map((team) => (
-            <SelectItem key={team.id} value={team.id}>
-              {team.name} ({team.key})
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <TeamPicker teams={teams} value={teamId} onChange={setTeamId} id="config-team" />
     </div>
   )
 }

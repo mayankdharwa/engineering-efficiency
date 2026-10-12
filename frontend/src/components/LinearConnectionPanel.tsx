@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '../api'
+import { queryKeys } from '../lib/queryKeys'
 import { useTimezone } from '../hooks/useAppSettings'
 import { formatDateTime } from '../lib/format'
 import { notifyError, notifySuccess } from '../lib/notify'
@@ -20,7 +21,7 @@ export function LinearConnectionPanel() {
   const timezone = useTimezone()
   const [apiKey, setApiKey] = useState('')
 
-  const configQuery = useQuery({ queryKey: ['config'], queryFn: api.getConfig })
+  const configQuery = useQuery({ queryKey: queryKeys.config, queryFn: api.getConfig })
 
   const saveMutation = useMutation({
     mutationFn: (key: string) => api.saveConfig(key),
@@ -31,7 +32,7 @@ export function LinearConnectionPanel() {
           ? `Connected to ${config.organization_name}.`
           : 'API key saved.',
       )
-      queryClient.invalidateQueries({ queryKey: ['config'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.config })
     },
     onError: (error: Error) => notifyError(error.message),
   })

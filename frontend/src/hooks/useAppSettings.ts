@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
+import { APP_SETTINGS_QUERY_KEY } from '../lib/queryKeys'
 
-/** Shared query key for the app-wide metric settings. */
-export const APP_SETTINGS_QUERY_KEY = ['settings'] as const
+export { APP_SETTINGS_QUERY_KEY }
 
 export function useAppSettings() {
   return useQuery({ queryKey: APP_SETTINGS_QUERY_KEY, queryFn: api.getSettings })

@@ -27,9 +27,12 @@ import { useTimezone } from '../hooks/useAppSettings'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { formatCycle } from '../lib/format'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import { useSelectedCycleId } from '../lib/selection'
 import { isoDateInTimeZone, zonedDateToUtcIso } from '../lib/timezone'
 import type { CycleSettingsIn } from '../types'
 import { CycleSelect } from './CycleSelect'
+import { QueryPanelBody } from './QueryPanelBody'
 import { TeamSelect } from './TeamSelect'
 
 /** Per-team cycle dates and working-day override. */
@@ -37,29 +40,17 @@ export function CycleConfigurationPanel() {
   const queryClient = useQueryClient()
   const timezone = useTimezone()
   const { teamId } = useConfigTeam()
-  const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null)
 
   const cyclesQuery = useQuery({
-    queryKey: ['cycles', teamId],
+    queryKey: queryKeys.cycles(teamId),
     queryFn: () => api.listCycles(teamId as number),
     enabled: teamId !== null,
   })
   const cycles = cyclesQuery.data ?? []
-
-  useEffect(() => {
-    setSelectedCycleId(null)
-  }, [teamId])
-
-  useEffect(() => {
-    if (cycles.length === 0) return
-    if (selectedCycleId === null || !cycles.some((cycle) => cycle.id === selectedCycleId)) {
-      const current = cycles.find((cycle) => cycle.is_current)
-      setSelectedCycleId(current?.id ?? cycles[0].id)
-    }
-  }, [cycles, selectedCycleId])
+  const [selectedCycleId, setSelectedCycleId] = useSelectedCycleId(cycles, teamId)
 
   const cycleQuery = useQuery({
-    queryKey: ['cycle', teamId, selectedCycleId],
+    queryKey: queryKeys.cycle(teamId, selectedCycleId),
     queryFn: () => api.getCycleSettings(teamId as number, selectedCycleId),
     enabled: teamId !== null && selectedCycleId !== null,
   })
@@ -82,9 +73,7 @@ export function CycleConfigurationPanel() {
       api.updateCycleSettings(teamId as number, payload, selectedCycleId),
     onSuccess: () => {
       notifySuccess('Cycle configuration saved.')
-      queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['cycles', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+      if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
     onError: (error: Error) => notifyError(error.message),
   })
@@ -97,9 +86,7 @@ export function CycleConfigurationPanel() {
       notifySuccess(
         'Cycle finalized. Its data is preserved; refresh the team to load the next cycle.',
       )
-      queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['cycles', teamId] })
-      queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
+      if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
     onError: (error: Error) => notifyError(error.message),
   })
@@ -137,66 +124,73 @@ export function CycleConfigurationPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
-          {teamId === null ? null : cycleQuery.isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-48" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          ) : cycleQuery.isError ? (
-            <p className="text-sm text-destructive">{cycleQuery.error.message}</p>
-          ) : !cycle?.ready ? (
-            <p className="text-sm text-muted-foreground">
-              {cycle?.message ?? 'Refresh this team in Linear Setup to download its current cycle.'}
-            </p>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="font-medium">
-                  {formatCycle(cycle.cycle_name, cycle.cycle_number)}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  {cycle.working_days_overridden
-                    ? `${cycle.working_days} working days (Linear default ${cycle.default_working_days})`
-                    : `${cycle.working_days} working days`}
-                </span>
+          {teamId === null ? null : (
+          <QueryPanelBody
+            isLoading={cycleQuery.isLoading}
+            isError={cycleQuery.isError}
+            error={cycleQuery.error}
+            ready={Boolean(cycle?.ready)}
+            notReadyMessage={
+              cycle?.message ?? 'Refresh this team in Linear Setup to download its current cycle.'
+            }
+            skeleton={
+              <div className="space-y-3">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-24 w-full" />
               </div>
+            }
+          >
+            {cycle && (
+              <>
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="font-medium">
+                    {formatCycle(cycle.cycle_name, cycle.cycle_number)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {cycle.working_days_overridden
+                      ? `${cycle.working_days} working days (Linear default ${cycle.default_working_days})`
+                      : `${cycle.working_days} working days`}
+                  </span>
+                </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="cycle-start">Cycle start</Label>
-                  <Input
-                    id="cycle-start"
-                    type="date"
-                    value={startDate}
-                    disabled={finalized}
-                    onChange={(event) => setStartDate(event.target.value)}
-                  />
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="cycle-start">Cycle start</Label>
+                    <Input
+                      id="cycle-start"
+                      type="date"
+                      value={startDate}
+                      disabled={finalized}
+                      onChange={(event) => setStartDate(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cycle-end">Cycle end</Label>
+                    <Input
+                      id="cycle-end"
+                      type="date"
+                      value={endDate}
+                      disabled={finalized}
+                      onChange={(event) => setEndDate(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cycle-working-days">Working days</Label>
+                    <Input
+                      id="cycle-working-days"
+                      type="number"
+                      min={0}
+                      max={60}
+                      step={0.5}
+                      value={workingDays}
+                      disabled={finalized}
+                      onChange={(event) => setWorkingDays(event.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cycle-end">Cycle end</Label>
-                  <Input
-                    id="cycle-end"
-                    type="date"
-                    value={endDate}
-                    disabled={finalized}
-                    onChange={(event) => setEndDate(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cycle-working-days">Working days</Label>
-                  <Input
-                    id="cycle-working-days"
-                    type="number"
-                    min={0}
-                    max={60}
-                    step={0.5}
-                    value={workingDays}
-                    disabled={finalized}
-                    onChange={(event) => setWorkingDays(event.target.value)}
-                  />
-                </div>
-              </div>
-            </>
+              </>
+            )}
+          </QueryPanelBody>
           )}
         </CardContent>
         {cycle?.ready && (

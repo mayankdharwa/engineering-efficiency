@@ -101,9 +101,9 @@ class LinearError(RuntimeError):
 
 
 class LinearClient:
-    def __init__(self, api_key: str, endpoint: str | None = None) -> None:
+    def __init__(self, api_key: str) -> None:
         self._client = httpx.Client(
-            base_url=endpoint or settings.linear_api_url,
+            base_url=settings.linear_api_url,
             headers={
                 # Linear personal API keys are passed verbatim (no "Bearer").
                 "Authorization": api_key,
