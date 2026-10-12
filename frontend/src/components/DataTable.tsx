@@ -35,7 +35,13 @@ function columnClassName(
 ): string | undefined {
   const extra = (meta as AppColumnMeta | undefined)?.className
   const centered = Boolean(centerExcept) && !centerExcept?.includes(columnId)
-  return cn(centered && 'text-center', extra) || undefined
+  return (
+    cn(
+      centered && 'text-center whitespace-normal',
+      centerExcept && !centered && 'w-[22%]',
+      extra,
+    ) || undefined
+  )
 }
 
 export function DataTable<TData extends RowData>({
@@ -49,7 +55,7 @@ export function DataTable<TData extends RowData>({
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      <Table>
+      <Table className={centerExcept ? 'table-fixed' : undefined}>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id} className="hover:bg-transparent">

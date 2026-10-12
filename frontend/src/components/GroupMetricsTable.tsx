@@ -3,6 +3,8 @@ import { selectGroups } from '../lib/groups'
 import { formatPoints } from '../lib/format'
 import { appTableFeatures } from '../lib/table'
 import type { GroupMetricsOut } from '../types'
+import { AvailablePointsCell } from './AvailablePointsCell'
+import { BandwidthCell } from './BandwidthCell'
 import { DataTable, type AppColumnDef } from './DataTable'
 import { GroupBadge } from './GroupBadge'
 import { PercentCell } from './PercentCell'
@@ -24,28 +26,38 @@ const columns: AppColumnDef<GroupMetricsOut>[] = [
     header: 'People',
     cell: (ctx) => <span className="tabular-nums">{ctx.getValue()}</span>,
   }),
-  helper.accessor('capacity_points', {
-    header: 'Capacity',
-    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
+  helper.accessor('bandwidth_efficiency', {
+    header: 'Bandwidth Efficiency',
+    cell: (ctx) => {
+      const group = ctx.row.original
+      return (
+        <BandwidthCell
+          taken={group.taken_points}
+          capacity={group.capacity_points}
+          ratio={group.bandwidth_efficiency}
+        />
+      )
+    },
   }),
-  helper.accessor('taken_points', {
-    header: 'Taken',
-    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
+  helper.accessor((row) => row.capacity_points - row.taken_points, {
+    id: 'available_points',
+    header: 'Available Points',
+    cell: (ctx) => <AvailablePointsCell available={ctx.getValue()} />,
   }),
   helper.accessor('done_points', {
-    header: 'Done',
+    header: 'Completed Points',
+    cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
+  }),
+  helper.accessor('adhoc_points', {
+    header: 'Adhoc Points',
     cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
   }),
   helper.accessor('planning_efficiency', {
-    header: 'Planning',
+    header: 'Planning Efficiency',
     cell: (ctx) => <PercentCell value={ctx.getValue()} />,
   }),
   helper.accessor('velocity', {
     header: 'Velocity',
-    cell: (ctx) => <PercentCell value={ctx.getValue()} />,
-  }),
-  helper.accessor('bandwidth_efficiency', {
-    header: 'Bandwidth',
     cell: (ctx) => <PercentCell value={ctx.getValue()} />,
   }),
 ]
@@ -60,6 +72,7 @@ export function GroupMetricsTable({ groups, selected }: GroupMetricsTableProps) 
     <DataTable
       columns={columns}
       data={selectGroups(groups, selected)}
+      centerExcept={['label']}
       emptyMessage="Add groups and assign members in Configuration to see group totals."
     />
   )

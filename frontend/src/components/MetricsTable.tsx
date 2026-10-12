@@ -3,6 +3,7 @@ import { formatPoints } from '../lib/format'
 import { filterMembers } from '../lib/groups'
 import { appTableFeatures } from '../lib/table'
 import type { MemberMetricsOut } from '../types'
+import { AvailablePointsCell } from './AvailablePointsCell'
 import { BandwidthCell } from './BandwidthCell'
 import { DataTable, type AppColumnDef } from './DataTable'
 import { GroupBadge } from './GroupBadge'
@@ -21,7 +22,6 @@ function isListed(member: MemberMetricsOut): boolean {
 const columns: AppColumnDef<MemberMetricsOut>[] = [
   helper.accessor('name', {
     header: 'Member',
-    meta: { className: 'w-px whitespace-nowrap' },
     cell: (ctx) => {
       const member = ctx.row.original
       const muted = member.linear_id === null
@@ -37,7 +37,6 @@ const columns: AppColumnDef<MemberMetricsOut>[] = [
   }),
   helper.accessor('unavailable_days', {
     header: 'Unavailable',
-    meta: { className: 'w-px whitespace-nowrap' },
     cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}d</span>,
   }),
   helper.accessor('bandwidth_efficiency', {
@@ -56,20 +55,7 @@ const columns: AppColumnDef<MemberMetricsOut>[] = [
   helper.accessor((row) => row.capacity_points - row.taken_points, {
     id: 'available_points',
     header: 'Available Points',
-    cell: (ctx) => {
-      const available = ctx.getValue()
-      if (available <= 0) {
-        return <span className="text-muted-foreground">—</span>
-      }
-      return (
-        <span className="tabular-nums">
-          <span className="font-bold">{formatPoints(available)}</span>{' '}
-          <span className="text-muted-foreground">
-            (~{formatPoints(available / 2)}d)
-          </span>
-        </span>
-      )
-    },
+    cell: (ctx) => <AvailablePointsCell available={ctx.getValue()} />,
   }),
   helper.accessor('done_points', {
     header: 'Completed Points',
