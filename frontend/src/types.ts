@@ -1,6 +1,7 @@
 export interface GroupOut {
   id: number
   name: string
+  color: string
 }
 
 export interface LinearConfigOut {
@@ -64,6 +65,7 @@ export interface MemberMetricsOut {
   email: string | null
   group_id: number | null
   group_name: string | null
+  group_color: string | null
   counts_toward_capacity: boolean
   unavailable_days: number
   capacity_points: number
@@ -88,6 +90,7 @@ export interface VelocityTrendPointOut {
 export interface GroupMetricsOut {
   group_id: number | null
   label: string
+  color: string | null
   members: number
   capacity_points: number
   taken_points: number

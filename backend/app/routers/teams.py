@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..app_settings import get_app_settings
 from ..costs import TeamCostView, get_team_cost
 from ..database import get_db
+from ..group_colors import pick_default_color
 from ..linear_client import LinearError
 from ..metrics import compute_team_metrics, get_cycle, weekdays_between
 from ..models import (
@@ -21,13 +22,6 @@ from ..models import (
     TeamCost,
     TeamMember,
     utcnow,
-)
-from ..sync import (
-    CycleMismatchError,
-    client_from_config,
-    record_sync_run,
-    sync_team_issues,
-    upsert_teams,
 )
 from ..schemas import (
     CycleMemberOut,
@@ -42,6 +36,13 @@ from ..schemas import (
     TeamCostIn,
     TeamCostOut,
     TeamOut,
+)
+from ..sync import (
+    CycleMismatchError,
+    client_from_config,
+    record_sync_run,
+    sync_team_issues,
+    upsert_teams,
 )
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -559,7 +560,12 @@ def create_group(
             status_code=400, detail=f"Group '{name}' already exists for this team."
         )
 
-    group = MemberGroup(team_id=team.id, name=name)
+    color = payload.color or pick_default_color(
+        [row.color for row in db.scalars(
+            select(MemberGroup).where(MemberGroup.team_id == team.id)
+        ).all()]
+    )
+    group = MemberGroup(team_id=team.id, name=name, color=color)
     db.add(group)
     db.commit()
     db.refresh(group)
@@ -567,13 +573,13 @@ def create_group(
 
 
 @router.put("/{team_id}/groups/{group_id}", response_model=GroupOut)
-def rename_group(
+def update_group(
     team_id: int,
     group_id: int,
     payload: GroupIn,
     db: Session = Depends(get_db),
 ) -> MemberGroup:
-    """Rename a team's group."""
+    """Rename a team's group and/or change its chip colour."""
     _get_team_or_404(db, team_id)
     group = _group_or_404(db, team_id, group_id)
     name = payload.name.strip()
@@ -592,6 +598,8 @@ def rename_group(
         )
 
     group.name = name
+    if payload.color is not None:
+        group.color = payload.color
     db.commit()
     db.refresh(group)
     return group

@@ -12,11 +12,66 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
+import { isHexColor, parseHexColor } from '../lib/color'
 import { notifyError, notifySuccess } from '../lib/notify'
 import type { GroupOut } from '../types'
+import { GroupBadge } from './GroupBadge'
 import { TeamSelect } from './TeamSelect'
 
-/** Add, rename and delete a team's member groups. */
+const DEFAULT_GROUP_COLORS = [
+  '#d97706',
+  '#2563eb',
+  '#059669',
+  '#dc2626',
+  '#7c3aed',
+  '#db2777',
+  '#0d9488',
+  '#ea580c',
+]
+
+interface GroupDraft {
+  name: string
+  color: string
+}
+
+function nextGroupColor(groups: GroupOut[]): string {
+  const used = new Set(groups.map((group) => group.color.toLowerCase()))
+  return (
+    DEFAULT_GROUP_COLORS.find((color) => !used.has(color)) ??
+    DEFAULT_GROUP_COLORS[groups.length % DEFAULT_GROUP_COLORS.length]
+  )
+}
+
+function ColorField({
+  value,
+  ariaLabel,
+  onChange,
+}: {
+  value: string
+  ariaLabel: string
+  onChange: (color: string) => void
+}) {
+  const pickerValue = parseHexColor(value) ?? DEFAULT_GROUP_COLORS[0]
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="color"
+        className="h-8 w-8 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+        value={pickerValue}
+        aria-label={`${ariaLabel} colour picker`}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <Input
+        className="h-8 w-24 font-mono text-xs uppercase"
+        value={value}
+        aria-label={`${ariaLabel} hex colour`}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  )
+}
+
+/** Add, rename, recolour and delete a team's member groups. */
 export function GroupsPanel() {
   const queryClient = useQueryClient()
   const { teamId } = useConfigTeam()
@@ -28,13 +83,16 @@ export function GroupsPanel() {
   })
   const groups: GroupOut[] = groupsQuery.data ?? []
 
-  const [groupDrafts, setGroupDrafts] = useState<Record<number, string>>({})
+  const [groupDrafts, setGroupDrafts] = useState<Record<number, GroupDraft>>({})
   const [newGroupName, setNewGroupName] = useState('')
+  const [newGroupColor, setNewGroupColor] = useState(DEFAULT_GROUP_COLORS[0])
 
   useEffect(() => {
     if (!groupsQuery.data) return
     setGroupDrafts(
-      Object.fromEntries(groupsQuery.data.map((group) => [group.id, group.name])),
+      Object.fromEntries(
+        groupsQuery.data.map((group) => [group.id, { name: group.name, color: group.color }]),
+      ),
     )
   }, [groupsQuery.data])
 
@@ -45,20 +103,22 @@ export function GroupsPanel() {
   }
 
   const createGroup = useMutation({
-    mutationFn: (name: string) => api.createGroup(teamId as number, name),
+    mutationFn: (payload: { name: string; color: string }) =>
+      api.createGroup(teamId as number, payload),
     onSuccess: (group) => {
       setNewGroupName('')
+      setNewGroupColor(nextGroupColor([...groups, group]))
       notifySuccess(`Added group '${group.name}'.`)
       invalidate()
     },
     onError: (error: Error) => notifyError(error.message),
   })
 
-  const renameGroup = useMutation({
-    mutationFn: ({ id, name }: { id: number; name: string }) =>
-      api.renameGroup(teamId as number, id, name),
+  const updateGroup = useMutation({
+    mutationFn: ({ id, name, color }: { id: number; name: string; color: string }) =>
+      api.updateGroup(teamId as number, id, { name, color }),
     onSuccess: (group) => {
-      notifySuccess(`Renamed group to '${group.name}'.`)
+      notifySuccess(`Updated group '${group.name}'.`)
       invalidate()
     },
     onError: (error: Error) => notifyError(error.message),
@@ -73,6 +133,20 @@ export function GroupsPanel() {
     onError: (error: Error) => notifyError(error.message),
   })
 
+  function patchDraft(id: number, patch: Partial<GroupDraft>) {
+    setGroupDrafts((prev) => ({
+      ...prev,
+      [id]: { name: prev[id]?.name ?? '', color: prev[id]?.color ?? '', ...patch },
+    }))
+  }
+
+  function submitNewGroup() {
+    const name = newGroupName.trim()
+    const color = parseHexColor(newGroupColor)
+    if (!name || !color) return
+    createGroup.mutate({ name, color })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <TeamSelect />
@@ -80,8 +154,8 @@ export function GroupsPanel() {
         <CardHeader className="border-b">
           <CardTitle>Groups</CardTitle>
           <CardDescription>
-            Add any number of groups, then assign each person to one of them in Team Configuration.
-            Group totals drive the dashboard&apos;s group breakdown and filter.
+            Add any number of groups and pick a colour for each chip. Assign people in Team
+            Configuration. Group totals drive the dashboard&apos;s group breakdown and filter.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
@@ -97,29 +171,48 @@ export function GroupsPanel() {
               {groups.length > 0 && (
                 <div className="space-y-2">
                   {groups.map((group) => {
-                    const draft = groupDrafts[group.id] ?? group.name
-                    const changed = draft.trim() !== group.name
+                    const draft = groupDrafts[group.id] ?? {
+                      name: group.name,
+                      color: group.color,
+                    }
+                    const nextColor = parseHexColor(draft.color)
+                    const changed =
+                      draft.name.trim() !== group.name || nextColor !== group.color.toLowerCase()
+                    const previewName = draft.name.trim() || group.name
+                    const previewColor = nextColor ?? group.color
                     return (
                       <div key={group.id} className="flex flex-wrap items-center gap-2">
+                        <GroupBadge name={previewName} color={previewColor} />
                         <Input
                           className="h-8 max-w-xs"
-                          value={draft}
+                          value={draft.name}
                           aria-label={`Name for group ${group.name}`}
-                          onChange={(event) =>
-                            setGroupDrafts((prev) => ({
-                              ...prev,
-                              [group.id]: event.target.value,
-                            }))
-                          }
+                          onChange={(event) => patchDraft(group.id, { name: event.target.value })}
+                        />
+                        <ColorField
+                          value={draft.color}
+                          ariaLabel={`Colour for group ${group.name}`}
+                          onChange={(color) => patchDraft(group.id, { color })}
                         />
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={!changed || draft.trim().length === 0 || renameGroup.isPending}
-                          onClick={() => renameGroup.mutate({ id: group.id, name: draft.trim() })}
+                          disabled={
+                            !changed ||
+                            draft.name.trim().length === 0 ||
+                            !isHexColor(draft.color) ||
+                            updateGroup.isPending
+                          }
+                          onClick={() =>
+                            updateGroup.mutate({
+                              id: group.id,
+                              name: draft.name.trim(),
+                              color: nextColor ?? group.color,
+                            })
+                          }
                         >
-                          Rename
+                          Save
                         </Button>
                         <Button
                           type="button"
@@ -138,6 +231,10 @@ export function GroupsPanel() {
               )}
 
               <div className="flex flex-wrap items-center gap-2">
+                <GroupBadge
+                  name={newGroupName.trim() || 'New group'}
+                  color={parseHexColor(newGroupColor) ?? DEFAULT_GROUP_COLORS[0]}
+                />
                 <Input
                   className="h-8 max-w-xs"
                   placeholder="New group name"
@@ -147,16 +244,25 @@ export function GroupsPanel() {
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && newGroupName.trim().length > 0) {
                       event.preventDefault()
-                      createGroup.mutate(newGroupName.trim())
+                      submitNewGroup()
                     }
                   }}
+                />
+                <ColorField
+                  value={newGroupColor}
+                  ariaLabel="New group"
+                  onChange={setNewGroupColor}
                 />
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={newGroupName.trim().length === 0 || createGroup.isPending}
-                  onClick={() => createGroup.mutate(newGroupName.trim())}
+                  disabled={
+                    newGroupName.trim().length === 0 ||
+                    !isHexColor(newGroupColor) ||
+                    createGroup.isPending
+                  }
+                  onClick={submitNewGroup}
                 >
                   Add group
                 </Button>

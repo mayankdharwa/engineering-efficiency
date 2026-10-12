@@ -17,7 +17,7 @@ const columns: AppColumnDef<GroupMetricsOut>[] = [
       if (row.group_id === null) {
         return <span className="text-muted-foreground">{row.label}</span>
       }
-      return <GroupBadge name={row.label} />
+      return <GroupBadge name={row.label} color={row.color} />
     },
   }),
   helper.accessor('members', {

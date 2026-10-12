@@ -109,15 +109,15 @@ export const api = {
     }),
 
   listGroups: (teamId: number) => request<GroupOut[]>(`/teams/${teamId}/groups`),
-  createGroup: (teamId: number, name: string) =>
+  createGroup: (teamId: number, payload: { name: string; color?: string }) =>
     request<GroupOut>(`/teams/${teamId}/groups`, {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(payload),
     }),
-  renameGroup: (teamId: number, groupId: number, name: string) =>
+  updateGroup: (teamId: number, groupId: number, payload: { name: string; color?: string }) =>
     request<GroupOut>(`/teams/${teamId}/groups/${groupId}`, {
       method: 'PUT',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(payload),
     }),
   deleteGroup: (teamId: number, groupId: number) =>
     request<void>(`/teams/${teamId}/groups/${groupId}`, { method: 'DELETE' }),

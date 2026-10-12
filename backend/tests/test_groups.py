@@ -84,9 +84,27 @@ def test_group_crud_and_member_assignment() -> None:
         )
         assert backend.status_code == 201, backend.text
         backend_id = backend.json()["id"]
-        frontend_id = client.post(
+        assert backend.json()["color"] == "#d97706"
+        frontend = client.post(
             f"/api/teams/{team_id}/groups", json={"name": "Frontend"}
-        ).json()["id"]
+        )
+        frontend_id = frontend.json()["id"]
+        assert frontend.json()["color"] == "#2563eb"
+
+        painted = client.put(
+            f"/api/teams/{team_id}/groups/{backend_id}",
+            json={"name": "Backend", "color": "DC2626"},
+        )
+        assert painted.status_code == 200, painted.text
+        assert painted.json()["color"] == "#dc2626"
+
+        assert (
+            client.put(
+                f"/api/teams/{team_id}/groups/{backend_id}",
+                json={"name": "Backend", "color": "red"},
+            ).status_code
+            == 422
+        )
 
         # Duplicate and blank names are rejected.
         assert (
@@ -138,10 +156,10 @@ def test_group_crud_and_member_assignment() -> None:
 
         # Stats expose one row per group plus an Unassigned bucket.
         stats = client.get(f"/api/teams/{team_id}/stats").json()
-        assert {row["label"] for row in stats["groups"]} == {
-            "Backend",
-            "Frontend",
-        }
+        by_label = {row["label"]: row for row in stats["groups"]}
+        assert set(by_label) == {"Backend", "Frontend"}
+        assert by_label["Backend"]["color"] == "#dc2626"
+        assert by_label["Frontend"]["color"] == "#2563eb"
 
         # Rename and delete.
         renamed = client.put(

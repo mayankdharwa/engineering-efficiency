@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .group_colors import FALLBACK_GROUP_COLOR, GroupColorError, normalize_hex
 
 # Allowed currency symbols for a team's cost configuration.
 CurrencySymbol = Literal["€", "$", "₹"]
@@ -97,6 +99,7 @@ class MemberMetricsOut(BaseModel):
     email: str | None = None
     group_id: int | None = None
     group_name: str | None = None
+    group_color: str | None = None
     counts_toward_capacity: bool = True
     unavailable_days: float
     capacity_points: float
@@ -121,6 +124,7 @@ class VelocityTrendPointOut(BaseModel):
 class GroupMetricsOut(BaseModel):
     group_id: int | None = None
     label: str
+    color: str | None = None
     members: int
     capacity_points: float
     taken_points: float
@@ -170,6 +174,12 @@ class GroupOut(BaseModel):
 
     id: int
     name: str
+    color: str = FALLBACK_GROUP_COLOR
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def default_missing_color(cls, value: str | None) -> str:
+        return value or FALLBACK_GROUP_COLOR
 
 
 class TeamCostOut(BaseModel):
@@ -185,6 +195,17 @@ class TeamCostIn(BaseModel):
 
 class GroupIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
+    color: str | None = None
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: str | None) -> str | None:
+        if value is None or value.strip() == "":
+            return None
+        try:
+            return normalize_hex(value)
+        except GroupColorError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class CycleMemberOut(BaseModel):

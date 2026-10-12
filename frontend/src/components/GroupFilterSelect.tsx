@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/select'
 import { ALL_GROUPS_KEY, UNASSIGNED_KEY } from '../lib/groups'
 import type { GroupOut } from '../types'
+import { GroupBadge } from './GroupBadge'
 
 interface GroupFilterSelectProps {
   groups: GroupOut[]
@@ -38,10 +39,12 @@ export function GroupFilterSelect({ groups, selected, onChange }: GroupFilterSel
     onChange(new Set(next))
   }
 
-  const labelFor = (key: string) =>
-    key === UNASSIGNED_KEY
-      ? 'Unassigned'
-      : (groups.find((group) => String(group.id) === key)?.name ?? key)
+  const groupFor = (key: string) => groups.find((group) => String(group.id) === key)
+
+  function labelFor(key: string) {
+    if (key === UNASSIGNED_KEY) return 'Unassigned'
+    return groupFor(key)?.name ?? key
+  }
 
   return (
     <Select multiple items={items} value={value} onValueChange={handleChange}>
@@ -55,17 +58,25 @@ export function GroupFilterSelect({ groups, selected, onChange }: GroupFilterSel
                 : []
             const specific = keys.filter((key) => key !== ALL_GROUPS_KEY)
             if (specific.length === 0) return 'All groups'
-            if (specific.length === 1) return labelFor(specific[0])
+            if (specific.length === 1) {
+              const key = specific[0]
+              const group = groupFor(key)
+              if (group) return <GroupBadge name={group.name} color={group.color} />
+              return labelFor(key)
+            }
             return `${specific.length} groups`
           }}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {items.map((item) => (
-          <SelectItem key={item.value} value={item.value}>
-            {item.label}
-          </SelectItem>
-        ))}
+        {items.map((item) => {
+          const group = groupFor(item.value)
+          return (
+            <SelectItem key={item.value} value={item.value}>
+              {group ? <GroupBadge name={group.name} color={group.color} /> : item.label}
+            </SelectItem>
+          )
+        })}
       </SelectContent>
     </Select>
   )

@@ -121,6 +121,7 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _migrate_to_cycle_hub()
     _add_missing_sqlite_columns()
+    _add_member_group_color_column()
     _migrate_member_roles_to_groups()
     _migrate_to_cycle_memberships()
     _set_schema_version(engine, CURRENT_SCHEMA_VERSION)
@@ -589,6 +590,25 @@ def _migrate_to_cycle_memberships(target_engine: Engine | None = None) -> None:
 
         connection.execute(text("PRAGMA foreign_keys=ON"))
         connection.commit()
+
+
+def _add_member_group_color_column() -> None:
+    """Add ``member_groups.color`` to databases created before group colours."""
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    if "member_groups" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("member_groups")}
+    if "color" in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "ALTER TABLE member_groups "
+                "ADD COLUMN color VARCHAR(7) NOT NULL DEFAULT '#d97706'"
+            )
+        )
 
 
 def _add_missing_sqlite_columns() -> None:

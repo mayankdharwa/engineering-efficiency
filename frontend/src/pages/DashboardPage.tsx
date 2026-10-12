@@ -169,7 +169,11 @@ export function DashboardPage() {
   // Defined groups (everything except the synthetic Unassigned bucket).
   const groupOptions: GroupOut[] = (stats?.groups ?? [])
     .filter((group) => group.group_id !== null)
-    .map((group) => ({ id: group.group_id as number, name: group.label }))
+    .map((group) => ({
+      id: group.group_id as number,
+      name: group.label,
+      color: group.color ?? '',
+    }))
 
   // Costs: each man-day is POINTS_PER_DAY points, so points convert to man-days
   // at 1 / POINTS_PER_DAY. Unutilized capacity is capacity that was not taken.

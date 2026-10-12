@@ -259,6 +259,7 @@ class MemberGroup(Base):
         ForeignKey("teams.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(64))
+    color: Mapped[str] = mapped_column(String(7), default="#d97706", server_default="#d97706")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime, default=utcnow, onupdate=utcnow

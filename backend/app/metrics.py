@@ -44,6 +44,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .app_settings import DEFAULT_DAY_CUTOFF_HOUR, get_app_settings
+from .group_colors import resolve_color
 from .models import (
     Cycle,
     CycleMembership,
@@ -164,6 +165,7 @@ class MemberMetrics:
     email: str | None
     group_id: int | None
     group_name: str | None
+    group_color: str | None
     counts_toward_capacity: bool
     unavailable_days: float
     capacity_points: float
@@ -194,6 +196,7 @@ class GroupMetrics:
 
     group_id: int | None
     label: str
+    color: str | None
     members: int
     capacity_points: float
     taken_points: float
@@ -315,6 +318,7 @@ def compute_team_metrics(
         ).all()
     )
     group_name_by_id = {group.id: group.name for group in groups}
+    group_color_by_id = {group.id: resolve_color(group.color) for group in groups}
     memberships = {
         row.member_linear_id: row
         for row in db.scalars(
@@ -374,6 +378,11 @@ def compute_team_metrics(
                     if member_group_id is not None
                     else None
                 ),
+                group_color=(
+                    group_color_by_id.get(member_group_id)
+                    if member_group_id is not None
+                    else None
+                ),
                 # Only members opted into capacity get the full allowance;
                 # assignees outside the team count their work but no capacity.
                 counts_toward_capacity=counts,
@@ -393,6 +402,7 @@ def compute_team_metrics(
                 email=None,
                 group_id=None,
                 group_name=None,
+                group_color=None,
                 counts_toward_capacity=False,
                 unavailable=0.0,
                 working_days=working_days,
@@ -439,13 +449,14 @@ def compute_team_metrics(
                 members_in_group,
                 progress,
                 _trend_for(members_in_group),
+                resolve_color(group.color),
             )
         )
     ungrouped = grouped.get(None, [])
     if ungrouped:
         group_rows.append(
             _build_group_metrics(
-                None, UNGROUPED_LABEL, ungrouped, progress, _trend_for(ungrouped)
+                None, UNGROUPED_LABEL, ungrouped, progress, _trend_for(ungrouped), None
             )
         )
 
@@ -579,6 +590,7 @@ def _build_group_metrics(
     group: list[MemberMetrics],
     progress: float,
     velocity_trend: list[VelocityTrendPoint] | None = None,
+    color: str | None = None,
 ) -> GroupMetrics:
     """Aggregate member rows in a group into a team-style ratio of totals."""
     taken = sum(row.taken_points for row in group)
@@ -589,6 +601,7 @@ def _build_group_metrics(
     return GroupMetrics(
         group_id=group_id,
         label=label,
+        color=color,
         members=len(group),
         capacity_points=capacity,
         taken_points=taken,
@@ -610,6 +623,7 @@ def _build_member_metrics(
     email: str | None,
     group_id: int | None = None,
     group_name: str | None = None,
+    group_color: str | None = None,
     counts_toward_capacity: bool = True,
     unavailable: float,
     working_days: float,
@@ -626,6 +640,7 @@ def _build_member_metrics(
         email=email,
         group_id=group_id,
         group_name=group_name,
+        group_color=group_color,
         counts_toward_capacity=counts_toward_capacity,
         unavailable_days=unavailable,
         capacity_points=capacity_points,
