@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, _migrate_member_roles_to_groups, get_db
 from app.main import app
-from app.models import CycleSettings, Team, TeamMember
+from app.models import Cycle, CycleMembership, Team, TeamMember
 
 
 def _make_client():
@@ -37,20 +37,37 @@ def _make_client():
 
 def _seed_team(session_factory) -> int:
     with session_factory() as db:
-        team = Team(
-            linear_id="t1", key="ENG", name="Engineering", current_cycle_id="c1"
-        )
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
         db.add(team)
-        db.commit()
-        db.add(TeamMember(team_id=team.id, linear_id="u1", name="Ada"))
-        db.add(TeamMember(team_id=team.id, linear_id="u2", name="Grace"))
+        db.flush()
+        cycle = Cycle(
+            team_id=team.id,
+            linear_id="c1",
+            starts_at=datetime(2026, 10, 5, tzinfo=UTC),
+            ends_at=datetime(2026, 10, 16, tzinfo=UTC),
+            working_days=10,
+        )
+        db.add(cycle)
+        db.flush()
+        team.current_cycle_id = cycle.id
+        ada = TeamMember(team_id=team.id, linear_id="u1", name="Ada")
+        grace = TeamMember(team_id=team.id, linear_id="u2", name="Grace")
+        db.add_all([ada, grace])
+        db.flush()
         db.add(
-            CycleSettings(
+            CycleMembership(
                 team_id=team.id,
-                cycle_id="c1",
-                starts_at=datetime(2026, 10, 5, tzinfo=UTC),
-                ends_at=datetime(2026, 10, 16, tzinfo=UTC),
-                working_days=10,
+                cycle_id=cycle.id,
+                member_id=ada.id,
+                member_linear_id="u1",
+            )
+        )
+        db.add(
+            CycleMembership(
+                team_id=team.id,
+                cycle_id=cycle.id,
+                member_id=grace.id,
+                member_linear_id="u2",
             )
         )
         db.commit()

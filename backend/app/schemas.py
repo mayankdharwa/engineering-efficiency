@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Allowed currency symbols for a team's cost configuration.
+CurrencySymbol = Literal["€", "$", "₹"]
 
 
 class LinearConfigIn(BaseModel):
@@ -60,9 +64,7 @@ class IssueOut(BaseModel):
     estimate: float | None = None
     assignee_name: str | None = None
     project_name: str | None = None
-    cycle_id: str | None = None
-    cycle_name: str | None = None
-    cycle_number: float | None = None
+    cycle_id: int | None = None
     labels: list[str] = []
     created_at: datetime | None = None
     completed_at: datetime | None = None
@@ -136,9 +138,10 @@ class TeamStatsOut(BaseModel):
     team_id: int
     ready: bool
     message: str | None = None
-    cycle_id: str | None = None
+    cycle_id: int | None = None
+    cycle_linear_id: str | None = None
     cycle_name: str | None = None
-    cycle_number: float | None = None
+    cycle_number: int | None = None
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     working_days: float
@@ -155,6 +158,8 @@ class TeamStatsOut(BaseModel):
     planning_efficiency: float | None = None
     velocity: float | None = None
     bandwidth_efficiency: float | None = None
+    currency: CurrencySymbol = "$"
+    man_day_cost: int = 0
     members: list[MemberMetricsOut] = []
     groups: list[GroupMetricsOut] = []
     velocity_trend: list[VelocityTrendPointOut] = []
@@ -165,6 +170,17 @@ class GroupOut(BaseModel):
 
     id: int
     name: str
+
+
+class TeamCostOut(BaseModel):
+    team_id: int
+    currency: CurrencySymbol
+    man_day_cost: int
+
+
+class TeamCostIn(BaseModel):
+    currency: CurrencySymbol
+    man_day_cost: int = Field(ge=0)
 
 
 class GroupIn(BaseModel):
@@ -181,18 +197,34 @@ class CycleMemberOut(BaseModel):
     counts_toward_capacity: bool = True
 
 
+class CycleOut(BaseModel):
+    """A stored cycle for a team, used by the cycle picker."""
+
+    id: int
+    linear_id: str
+    name: str | None = None
+    number: int | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    archived_at: datetime | None = None
+    is_current: bool = False
+
+
 class CycleSettingsOut(BaseModel):
     team_id: int
     ready: bool
     message: str | None = None
-    cycle_id: str | None = None
+    cycle_id: int | None = None
+    cycle_linear_id: str | None = None
     cycle_name: str | None = None
-    cycle_number: float | None = None
+    cycle_number: int | None = None
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     working_days: float
     default_working_days: float
     working_days_overridden: bool
+    archived_at: datetime | None = None
+    is_current: bool = False
     points_per_day: float
     groups: list[GroupOut] = []
     members: list[CycleMemberOut] = []

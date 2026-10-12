@@ -43,9 +43,7 @@ export interface IssueOut {
   estimate: number | null
   assignee_name: string | null
   project_name: string | null
-  cycle_id: string | null
-  cycle_name: string | null
-  cycle_number: number | null
+  cycle_id: number | null
   labels: string[]
   created_at: string | null
   completed_at: string | null
@@ -107,7 +105,8 @@ export interface TeamStatsOut {
   team_id: number
   ready: boolean
   message: string | null
-  cycle_id: string | null
+  cycle_id: number | null
+  cycle_linear_id: string | null
   cycle_name: string | null
   cycle_number: number | null
   starts_at: string | null
@@ -126,6 +125,8 @@ export interface TeamStatsOut {
   planning_efficiency: number | null
   velocity: number | null
   bandwidth_efficiency: number | null
+  currency: string
+  man_day_cost: number
   members: MemberMetricsOut[]
   groups: GroupMetricsOut[]
   velocity_trend: VelocityTrendPointOut[]
@@ -141,11 +142,23 @@ export interface CycleMemberOut {
   counts_toward_capacity: boolean
 }
 
+export interface CycleOut {
+  id: number
+  linear_id: string
+  name: string | null
+  number: number | null
+  starts_at: string | null
+  ends_at: string | null
+  archived_at: string | null
+  is_current: boolean
+}
+
 export interface CycleSettingsOut {
   team_id: number
   ready: boolean
   message: string | null
-  cycle_id: string | null
+  cycle_id: number | null
+  cycle_linear_id: string | null
   cycle_name: string | null
   cycle_number: number | null
   starts_at: string | null
@@ -153,9 +166,17 @@ export interface CycleSettingsOut {
   working_days: number
   default_working_days: number
   working_days_overridden: boolean
+  archived_at: string | null
+  is_current: boolean
   points_per_day: number
   groups: GroupOut[]
   members: CycleMemberOut[]
+}
+
+export interface TeamCostOut {
+  team_id: number
+  currency: string
+  man_day_cost: number
 }
 
 export interface CycleMemberAvailabilityIn {

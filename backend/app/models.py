@@ -1,8 +1,8 @@
 """ORM models.
 
-The schema is intentionally lean but captures everything we expect to need for
-efficiency metrics later (throughput, cycle time, WIP, estimation accuracy...).
-Raw Linear payloads are also stored so nothing is lost.
+Cycles are first-class: each team can retain many of them, and issues / leave
+point at a cycle row rather than a bare Linear id. Raw Linear payloads are
+also stored so nothing is lost.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from sqlalchemy import (
     Boolean,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -22,11 +23,23 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .database import Base, UTCDateTime
+from .database import Base, IntegerPK, UTCDateTime
+
+# Incremented when a one-shot data migration is required. See ``init_db``.
+CURRENT_SCHEMA_VERSION = 3
 
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class SchemaVersion(Base):
+    """Singleton row (id == 1) recording the applied schema version."""
+
+    __tablename__ = "schema_version"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version: Mapped[int] = mapped_column(Integer)
 
 
 class LinearConfig(Base):
@@ -73,9 +86,14 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Issue count from the last refresh of the team's *current* cycle — not a
+    # live COUNT of every historical issue stored for the team.
     issue_count: Mapped[int] = mapped_column(Integer, default=0)
-    # Linear id of the cycle currently stored for this team (set on refresh).
-    current_cycle_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Integer PK of the cycle currently pointed at by this team (set on refresh).
+    # Stored as a plain integer to avoid a circular FK with ``cycles.team_id``.
+    current_cycle_id: Mapped[int | None] = mapped_column(
+        IntegerPK, nullable=True, index=True
+    )
     last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -85,15 +103,26 @@ class Team(Base):
     issues: Mapped[list[Issue]] = relationship(
         back_populates="team", cascade="all, delete-orphan"
     )
+    cycles: Mapped[list[Cycle]] = relationship(
+        back_populates="team",
+        foreign_keys="Cycle.team_id",
+        cascade="all, delete-orphan",
+    )
 
 
 class Issue(Base):
     __tablename__ = "issues"
-    __table_args__ = (UniqueConstraint("linear_id", name="uq_issues_linear_id"),)
+    __table_args__ = (
+        UniqueConstraint("cycle_id", "linear_id", name="uq_issues_cycle_linear"),
+        Index("ix_issues_team_id_cycle_id", "team_id", "cycle_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     linear_id: Mapped[str] = mapped_column(String(64), index=True)
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
+    cycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cycles.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     identifier: Mapped[str] = mapped_column(String(64))
     title: Mapped[str] = mapped_column(Text)
@@ -109,9 +138,6 @@ class Issue(Base):
     creator_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     project_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    cycle_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    cycle_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    cycle_number: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     labels: Mapped[list[str]] = mapped_column(JSON, default=list)
 
@@ -132,6 +158,7 @@ class Issue(Base):
     raw: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     team: Mapped[Team] = relationship(back_populates="issues")
+    cycle: Mapped[Cycle | None] = relationship(back_populates="issues")
 
 
 class SyncRun(Base):
@@ -151,26 +178,27 @@ class SyncRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
-class CycleSettings(Base):
-    """Per-team, per-cycle configuration used by the efficiency metrics.
+class Cycle(Base):
+    """A Linear cycle stored for a team, plus local overrides.
 
-    Values are seeded from Linear on refresh (cycle name/number and start/end
-    dates). ``working_days`` is a manual override for holidays; when null the
-    metrics fall back to the number of weekdays between the cycle dates.
+    Seeded from Linear on refresh (name/number and start/end dates).
+    ``working_days`` is a manual override for holidays; when null the metrics
+    fall back to the number of weekdays between the cycle dates. Finalized
+    cycles keep their issues and leave so history can be browsed.
     """
 
-    __tablename__ = "cycle_settings"
+    __tablename__ = "cycles"
     __table_args__ = (
-        UniqueConstraint("team_id", "cycle_id", name="uq_cycle_settings_team_cycle"),
+        UniqueConstraint("team_id", "linear_id", name="uq_cycles_team_linear"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     team_id: Mapped[int] = mapped_column(
         ForeignKey("teams.id", ondelete="CASCADE"), index=True
     )
-    cycle_id: Mapped[str] = mapped_column(String(64), index=True)
-    cycle_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    cycle_number: Mapped[float | None] = mapped_column(Float, nullable=True)
+    linear_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     starts_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     ends_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     # Manual override for the number of working days (e.g. holidays). Null means
@@ -178,6 +206,35 @@ class CycleSettings(Base):
     working_days: Mapped[float | None] = mapped_column(Float, nullable=True)
     # True once a user edits the dates, so refreshes stop overwriting them.
     dates_overridden: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Set when the cycle is finalized (frozen). Archived cycles are preserved for
+    # history and no longer the team's active cycle once a newer one is refreshed.
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, default=utcnow, onupdate=utcnow
+    )
+
+    team: Mapped[Team] = relationship(back_populates="cycles", foreign_keys=[team_id])
+    issues: Mapped[list[Issue]] = relationship(back_populates="cycle")
+
+
+class TeamCost(Base):
+    """Per-team cost configuration used to value man-days.
+
+    A team has at most one row (enforced by the unique ``team_id``). ``currency``
+    is a display symbol (€, $ or ₹) and ``man_day_cost`` is the cost of a single
+    working day for the team, stored as a whole number in that currency.
+    """
+
+    __tablename__ = "team_costs"
+    __table_args__ = (UniqueConstraint("team_id", name="uq_team_costs_team"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    currency: Mapped[str] = mapped_column(String(8), default="$")
+    man_day_cost: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime, default=utcnow, onupdate=utcnow
@@ -227,28 +284,23 @@ class TeamMember(Base):
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_assignable: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Whether this member contributes capacity to the team's metrics. Defaults
-    # to True for assignable, active members but can be toggled per member.
-    counts_toward_capacity: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Optional group assignment used to aggregate metrics. Null = unassigned.
-    group_id: Mapped[int | None] = mapped_column(
-        ForeignKey("member_groups.id", ondelete="SET NULL"), nullable=True, index=True
-    )
     last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
-    group: Mapped[MemberGroup | None] = relationship()
 
+class CycleMembership(Base):
+    """Per-cycle snapshot of a member's group, capacity flag and leave.
 
-class MemberUnavailability(Base):
-    """Planned leave, in days, for a member within a specific cycle."""
+    Group and capacity are copied forward when a new cycle is created; leave
+    starts at zero. Finalized cycles keep their snapshot so history stays
+    accurate even if the live roster later changes.
+    """
 
-    __tablename__ = "member_unavailability"
+    __tablename__ = "cycle_memberships"
     __table_args__ = (
         UniqueConstraint(
-            "team_id",
             "cycle_id",
             "member_linear_id",
-            name="uq_member_unavailability_scope",
+            name="uq_cycle_memberships_scope",
         ),
     )
 
@@ -256,8 +308,19 @@ class MemberUnavailability(Base):
     team_id: Mapped[int] = mapped_column(
         ForeignKey("teams.id", ondelete="CASCADE"), index=True
     )
-    cycle_id: Mapped[str] = mapped_column(String(64), index=True)
+    cycle_id: Mapped[int] = mapped_column(
+        ForeignKey("cycles.id", ondelete="CASCADE"), index=True
+    )
+    # Optional FK so the snapshot survives a later member deletion (SET NULL)
+    # while ``member_linear_id`` still attributes the row.
+    member_id: Mapped[int | None] = mapped_column(
+        ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     member_linear_id: Mapped[str] = mapped_column(String(64), index=True)
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("member_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    counts_toward_capacity: Mapped[bool] = mapped_column(Boolean, default=True)
     unavailable_days: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

@@ -6,9 +6,12 @@ Definitions (confirmed with product):
 * ``working_days`` is configurable per cycle (defaults to the weekdays between
   the cycle's start and end dates).
 * ``unavailable_days`` is planned leave per member per cycle.
+* Group assignment and ``counts_toward_capacity`` are snapshotted per cycle
+  (copied forward when a new cycle is created).
 * ``capacity`` = ``max(working_days - unavailable_days, 0) * POINTS_PER_DAY``.
-  Only members with ``counts_toward_capacity`` contribute capacity; anyone else
-  still contributes their ``taken`` points but with zero capacity.
+  Only members with ``counts_toward_capacity`` on that cycle contribute
+  capacity; anyone else still contributes their ``taken`` points but with zero
+  capacity.
 * ``taken``  = sum of estimates assigned to the member (a null estimate is 0).
 * ``done``   = sum of estimates for issues in a completed state.
 * ``adhoc``  = sum of estimates for issues attached to the cycle *after its
@@ -42,10 +45,10 @@ from sqlalchemy.orm import Session
 
 from .app_settings import DEFAULT_DAY_CUTOFF_HOUR, get_app_settings
 from .models import (
-    CycleSettings,
+    Cycle,
+    CycleMembership,
     Issue,
     MemberGroup,
-    MemberUnavailability,
     Team,
     TeamMember,
     utcnow,
@@ -208,9 +211,10 @@ class GroupMetrics:
 class TeamMetrics:
     ready: bool
     message: str | None = None
-    cycle_id: str | None = None
+    cycle_id: int | None = None
+    cycle_linear_id: str | None = None
     cycle_name: str | None = None
-    cycle_number: float | None = None
+    cycle_number: int | None = None
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     working_days: float = DEFAULT_WORKING_DAYS
@@ -241,19 +245,28 @@ class _Bucket:
     name: str | None = None
 
 
-def get_cycle_settings(db: Session, team: Team) -> CycleSettings | None:
-    if not team.current_cycle_id:
+def get_cycle(
+    db: Session, team: Team, cycle_id: int | None = None
+) -> Cycle | None:
+    """Load a team's cycle by id, defaulting to the team's current cycle."""
+    target_id = cycle_id if cycle_id is not None else team.current_cycle_id
+    if target_id is None:
         return None
-    return db.scalar(
-        select(CycleSettings).where(
-            CycleSettings.team_id == team.id,
-            CycleSettings.cycle_id == team.current_cycle_id,
-        )
-    )
+    cycle = db.get(Cycle, target_id)
+    if cycle is None or cycle.team_id != team.id:
+        return None
+    return cycle
 
 
-def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
-    settings = get_cycle_settings(db, team)
+def get_cycle_settings(db: Session, team: Team) -> Cycle | None:
+    """Backward-compatible alias for :func:`get_cycle`."""
+    return get_cycle(db, team)
+
+
+def compute_team_metrics(
+    db: Session, team: Team, cycle: Cycle | None = None
+) -> TeamMetrics:
+    settings = cycle if cycle is not None else get_cycle(db, team)
     if settings is None:
         return TeamMetrics(
             ready=False,
@@ -283,7 +296,14 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
     now = utcnow()
     progress = _progress_fraction(settings.starts_at, working_days, now, zone, cutoff_hour)
 
-    issues = list(db.scalars(select(Issue).where(Issue.team_id == team.id)).all())
+    issues = list(
+        db.scalars(
+            select(Issue).where(
+                Issue.team_id == team.id,
+                Issue.cycle_id == settings.id,
+            )
+        ).all()
+    )
     members = list(
         db.scalars(select(TeamMember).where(TeamMember.team_id == team.id)).all()
     )
@@ -295,12 +315,12 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
         ).all()
     )
     group_name_by_id = {group.id: group.name for group in groups}
-    overrides = {
-        row.member_linear_id: row.unavailable_days
+    memberships = {
+        row.member_linear_id: row
         for row in db.scalars(
-            select(MemberUnavailability).where(
-                MemberUnavailability.team_id == team.id,
-                MemberUnavailability.cycle_id == settings.cycle_id,
+            select(CycleMembership).where(
+                CycleMembership.team_id == team.id,
+                CycleMembership.cycle_id == settings.id,
             )
         ).all()
     }
@@ -322,26 +342,27 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
             bucket.unestimated += 1
 
     member_by_id = {member.linear_id: member for member in members}
-    # Members who count toward capacity, plus anyone who owns work this cycle.
+    # Snapshot members who count toward capacity, plus anyone who owns work.
     # People who do not count still surface their points, but with 0 capacity.
     member_ids: list[str] = [
-        member.linear_id
-        for member in members
-        if member.counts_toward_capacity or member.linear_id in buckets
+        linear_id
+        for linear_id, snapshot in memberships.items()
+        if snapshot.counts_toward_capacity or linear_id in buckets
     ]
     for key in buckets:
-        if key is not None and key not in member_by_id and key not in member_ids:
+        if key is not None and key not in member_ids:
             member_ids.append(key)
 
     rows: list[MemberMetrics] = []
     for linear_id in member_ids:
         member = member_by_id.get(linear_id)
+        snapshot = memberships.get(linear_id)
         bucket = buckets.get(linear_id, _Bucket())
         name = (
             (member.display_name or member.name) if member else None
         ) or bucket.name or linear_id
-        counts = bool(member.counts_toward_capacity) if member else False
-        member_group_id = member.group_id if member else None
+        counts = bool(snapshot.counts_toward_capacity) if snapshot is not None else False
+        member_group_id = snapshot.group_id if snapshot is not None else None
         rows.append(
             _build_member_metrics(
                 linear_id=linear_id,
@@ -356,7 +377,7 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
                 # Only members opted into capacity get the full allowance;
                 # assignees outside the team count their work but no capacity.
                 counts_toward_capacity=counts,
-                unavailable=overrides.get(linear_id, 0.0),
+                unavailable=snapshot.unavailable_days if snapshot is not None else 0.0,
                 working_days=working_days,
                 progress=progress,
                 bucket=bucket,
@@ -446,9 +467,10 @@ def compute_team_metrics(db: Session, team: Team) -> TeamMetrics:
 
     return TeamMetrics(
         ready=True,
-        cycle_id=settings.cycle_id,
-        cycle_name=settings.cycle_name,
-        cycle_number=settings.cycle_number,
+        cycle_id=settings.id,
+        cycle_linear_id=settings.linear_id,
+        cycle_name=settings.name,
+        cycle_number=settings.number,
         starts_at=settings.starts_at,
         ends_at=settings.ends_at,
         working_days=working_days,

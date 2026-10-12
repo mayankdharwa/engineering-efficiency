@@ -30,6 +30,7 @@ import {
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import type { CycleSettingsIn, GroupOut } from '../types'
+import { CostConfigurationPanel } from './CostConfigurationPanel'
 import { TeamSelect } from './TeamSelect'
 
 /** Sentinel Select value for "no group". */
@@ -85,6 +86,7 @@ export function TeamConfigurationPanel() {
   })
 
   const cycle = cycleQuery.data
+  const snapshotLocked = Boolean(cycle?.archived_at)
   const groups: GroupOut[] = cycle?.groups ?? []
 
   const groupItems = [
@@ -123,13 +125,15 @@ export function TeamConfigurationPanel() {
   return (
     <div className="flex flex-col gap-6">
       <TeamSelect />
+      <CostConfigurationPanel />
       <Card>
         <CardHeader className="border-b">
-          <CardTitle>Team Configuration</CardTitle>
+          <CardTitle>Team Members</CardTitle>
           <CardDescription>
             Assign each person to a group and untick anyone who shouldn&apos;t count toward capacity
-            (e.g. non-developers or people not on this cycle). Unavailable days (planned leave)
-            reduce a person&apos;s capacity.
+            (e.g. non-developers or people not on this cycle). Group, capacity and leave are stored
+            per cycle. A new cycle copies the previous cycle&apos;s groups and capacity; leave starts
+            at zero.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
@@ -183,6 +187,7 @@ export function TeamConfigurationPanel() {
                             <Select
                               items={groupItems}
                               value={assignments[member.linear_id] ?? NO_GROUP}
+                              disabled={snapshotLocked}
                               onValueChange={(value) =>
                                 setAssignments((prev) => ({
                                   ...prev,
@@ -209,6 +214,7 @@ export function TeamConfigurationPanel() {
                           <TableCell>
                             <Checkbox
                               checked={counted}
+                              disabled={snapshotLocked}
                               onCheckedChange={(checked) =>
                                 setCounts((prev) => ({
                                   ...prev,
@@ -222,7 +228,7 @@ export function TeamConfigurationPanel() {
                             <Select
                               items={dayItems}
                               value={unavailable}
-                              disabled={!counted}
+                              disabled={!counted || snapshotLocked}
                               onValueChange={(value) =>
                                 setAvailability((prev) => ({
                                   ...prev,
@@ -260,7 +266,7 @@ export function TeamConfigurationPanel() {
             <Button
               type="button"
               className="min-w-32"
-              disabled={saveMutation.isPending}
+              disabled={saveMutation.isPending || snapshotLocked}
               onClick={handleSave}
             >
               {saveMutation.isPending ? 'Saving…' : 'Save'}

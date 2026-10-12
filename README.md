@@ -32,11 +32,17 @@ velocity, velocity trend, bandwidth) and TanStack Charts visualisations.
   passed, so the last point equals the headline velocity. It is returned per
   team and per group.
 - **Bandwidth efficiency** = `taken ÷ capacity`.
-- Members can be assigned to one **group** per team. Groups are fluid: add,
-  rename or delete any number of them. The dashboard recomputes the metrics above
-  per group (ratios of the group's totals) so groups can be compared side by
-  side, and the filter can combine any selection of groups. Members without a
-  group roll up under *Unassigned*.
+- **Cost of adhoc work** = `(adhoc_points ÷ 2) × man_day_cost`: since a man-day is
+  2 points, the adhoc points are converted to man-days and valued at the team's
+  man-day cost.
+- **Unutilized capacity cost** = `(max(capacity − taken, 0) ÷ 2) × man_day_cost`:
+  the value of capacity points that were not allocated to work.
+- Members can be assigned to one **group** per cycle. Groups themselves are
+  fluid team-level names (add, rename or delete). Group assignment and “counts
+  toward capacity” are snapshotted on each cycle and **copied forward** when a
+  new cycle is created; planned leave starts at zero on the new cycle. The
+  dashboard recomputes the metrics above per group for the selected cycle.
+  Members without a group roll up under *Unassigned*.
 - Team-level values are the ratio of team totals (not sums of ratios).
 - Issues with no estimate count as 0 points (flagged as *unestimated*); unassigned
   work is included in team totals under an *Unassigned* row.
@@ -66,7 +72,7 @@ engineering-efficiency/
 │   │   ├── config.py         # settings (EE_* env vars)
 │   │   ├── app_settings.py   # working timezone / cutoff preferences
 │   │   ├── database.py       # SQLite engine / sessions
-│   │   ├── models.py         # LinearConfig, Team, Issue, CycleSettings, ...
+│   │   ├── models.py         # LinearConfig, Team, Issue, Cycle, ...
 │   │   ├── schemas.py        # Pydantic API schemas
 │   │   ├── linear_client.py  # Linear GraphQL client
 │   │   ├── metrics.py        # efficiency metric computation
@@ -146,24 +152,32 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
    isn't measured against a day that is still in progress.
 5. In **Configuration → Cycle Configuration**, confirm the cycle dates pulled
    from Linear and override the number of working days if the cycle contains
-   holidays.
+   holidays. When Linear moves a team on to a new cycle, **Refresh** is blocked
+   until its current cycle is finalized: use **Finalize Cycle** on this page to
+   freeze it (the data is kept for history), then refresh the team to download
+   its new cycle. Each team is finalized independently.
 6. In **Configuration → Groups**, add as many **groups** as you need (e.g.
    Backend, Frontend, QA).
-7. In **Configuration → Team Configuration**, assign each person to one of those
-   groups, untick anyone who shouldn't count toward capacity (non-developers,
-   people not on this cycle), and set **unavailable days** (planned leave) per
-   person.
-8. Open **Dashboard**, pick a team, and use the **group filter** (All groups or
-   any combination) at the top to scope the cards, charts and tables. Review the
-   metric cards, the **velocity trend** line, the per-person charts (capacity vs
-   taken, velocity, planned vs adhoc), the **group breakdown** table, the
-   per-person table, and the **Issues** table (tick **Show done** to include
-   completed issues).
+7. In **Configuration → Team Configuration**, set the team's **Cost
+   Configuration** (currency symbol and man-day cost), then under **Team
+   Members** assign each person to one of those groups, untick anyone who
+   shouldn't count toward capacity (non-developers, people not on this cycle),
+   and set **unavailable days** (planned leave) for the current cycle. The next
+   cycle copies groups and capacity; leave starts at zero.
+8. Open **Dashboard**, pick a team and a **cycle** (defaults to the current one;
+   finalized cycles stay available for history). Use the **group filter** (All
+   groups or any combination) at the top to scope the cards, charts and tables.
+   Review the
+   metric cards (including **Cost of adhoc work** and **Unutilized capacity
+   cost**, derived from the team's man-day cost), the **velocity trend** line, the
+   per-person charts (capacity vs taken, velocity, planned vs adhoc), the **group
+   breakdown** table, the per-person table, and the **Issues** table (tick **Show
+   done** to include completed issues).
 
-> Only issues from each team's **active cycle** are downloaded and stored. Each
-> issue records the cycle it belongs to (`cycle_id`, `cycle_name`,
-> `cycle_number`) and when it was attached (`added_to_cycle_at`), which is how
-> adhoc work is detected.
+> Refresh downloads only the team's **active** Linear cycle. Earlier finalized
+> cycles stay stored and can be opened from the cycle picker. Each issue points
+> at a `cycles` row and records when it was attached (`added_to_cycle_at`),
+> which is how adhoc work is detected.
 
 ## API reference
 
@@ -179,15 +193,19 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 | POST   | `/api/teams/import`         | Fetch the team list from Linear              |
 | POST   | `/api/teams/{id}/refresh`   | Download the team's current-cycle issues    |
 | DELETE | `/api/teams/{id}`           | Delete a team and its locally stored data   |
-| GET    | `/api/teams/{id}/issues`    | List stored issues (paginated)               |
+| GET    | `/api/teams/{id}/issues`    | List stored issues (paginated; `?cycle_id=` to pick a cycle) |
 | GET    | `/api/teams/{id}/sync-runs` | Recent sync history for a team               |
-| GET    | `/api/teams/{id}/cycle`     | Current cycle dates, working days, groups, members |
+| GET    | `/api/teams/{id}/cycles`    | List stored cycles (name, dates, current/finalized) |
+| GET    | `/api/teams/{id}/cycle`     | Cycle dates, working days, groups, members (`?cycle_id=`) |
 | PUT    | `/api/teams/{id}/cycle`     | Update working days, dates, member leave/counting/group |
+| POST   | `/api/teams/{id}/cycle/finalize` | Finalize (freeze) the team's current cycle for history |
 | GET    | `/api/teams/{id}/groups`    | List a team's member groups                  |
 | POST   | `/api/teams/{id}/groups`    | Add a member group                           |
 | PUT    | `/api/teams/{id}/groups/{groupId}` | Rename a member group                 |
 | DELETE | `/api/teams/{id}/groups/{groupId}` | Delete a group (unassigns its members)        |
-| GET    | `/api/teams/{id}/stats`     | Computed efficiency metrics (team, per-group, per-person, velocity trend) |
+| GET    | `/api/teams/{id}/cost`      | A team's currency symbol and man-day cost    |
+| PUT    | `/api/teams/{id}/cost`      | Update a team's currency symbol and man-day cost |
+| GET    | `/api/teams/{id}/stats`     | Computed efficiency metrics (`?cycle_id=` to pick a cycle) |
 
 Interactive docs are available at `/docs` while the backend is running.
 
@@ -199,23 +217,41 @@ Tables:
 - `linear_config` — the saved API key and resolved viewer/org info (singleton).
 - `app_settings` — the working timezone and end-of-day cutoff used by the metrics
   (singleton).
-- `teams` — teams imported from Linear, with issue counts and last-synced time.
-- `issues` — the **current cycle's** issues per team, with state, assignee,
-  project, cycle (`cycle_id` / `cycle_name` / `cycle_number`), when each issue
-  was added to the cycle (`added_to_cycle_at`), estimates, Linear timestamps, and
-  the raw JSON payload.
-- `cycle_settings` — per team/cycle start & end dates, the working-days override
-  and whether the dates were edited manually.
-- `team_members` — the team's Linear membership, with active/assignable flags,
-  whether each member counts toward capacity, and the optional group assignment.
+- `teams` — teams imported from Linear, with last-synced time and a pointer to
+  the current cycle. `issue_count` is the last refresh's current-cycle count.
+- `cycles` — first-class per-team cycles (Linear id, name/number, dates,
+  working-days override, finalize timestamp).
+- `issues` — issues per cycle, uniquely keyed by `(cycle_id, linear_id)` so
+  carry-over work can exist on consecutive cycles. Each row stores state,
+  assignee, project, `added_to_cycle_at`, estimates, Linear timestamps, and the
+  raw JSON payload.
+- `team_members` — the team's Linear membership (identity, active/assignable).
 - `member_groups` — the per-team groups members can be assigned to.
-- `member_unavailability` — planned leave (days) per member per cycle.
+- `cycle_memberships` — per-cycle snapshot of group, capacity flag and leave.
+  Group and capacity are copied into a new cycle; leave starts at zero.
+- `team_costs` — the per-team currency symbol and man-day cost used to value
+  work.
 - `sync_runs` — audit log of every import/refresh.
+- `schema_version` — records the applied local schema version.
 
-> Refreshing a team deletes its previously stored issues and inserts the active
-> cycle's set, so the database only ever holds each team's current cycle. Cycle
-> settings and per-member availability/counting flags are preserved across
-> refreshes; members no longer returned by Linear are dropped.
+> Refreshing a team replaces only its **active cycle's** issues; earlier cycles are
+> retained. Cycle settings and per-member availability/counting flags are
+> preserved across refreshes; members no longer returned by Linear are dropped.
+
+> Refresh is **blocked** when Linear's active cycle differs from the cycle stored
+> locally and that cycle has not been finalized, so work can't be silently
+> discarded. Finalize it first (below).
+
+### Cycle history and finalization
+
+Cycles are finalized **per team**, since teams can be on different cycle
+schedules. **Configuration → Cycle Configuration → Finalize Cycle** marks the
+selected team's current cycle (`cycles.archived_at`) as finished and keeps its
+issues, cycle row, planned leave and sync history in the same database. Once a
+team's cycle is finalized, refreshing it downloads the next active cycle;
+earlier cycles stay queryable from the dashboard cycle picker (`?cycle_id=` on
+stats/issues). Finalized cycle dates and leave are locked. No files are copied
+and there is no app-wide switch.
 
 > Deleting a team removes its row and all of its child data (issues, cycle
 > settings, members, leave); its sync history is kept but detached. Linear is not
@@ -234,6 +270,8 @@ including the cycle start/end date pickers.
 
 ## Notes
 
-- Metrics use the **current** cycle only. Historical cycles are not retained.
+- Metrics default to the team's current cycle. The dashboard cycle picker can
+  open a finalized cycle; groups and capacity still reflect the current roster.
+  Each team rolls over independently.
 - A null estimate counts as 0 points but is surfaced as *unestimated*.
 - Two-way sync is out of scope: this app only reads from Linear.

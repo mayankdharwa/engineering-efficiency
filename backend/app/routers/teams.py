@@ -7,20 +7,31 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from ..app_settings import get_app_settings
+from ..costs import TeamCostView, get_team_cost
 from ..database import get_db
 from ..linear_client import LinearError
-from ..metrics import compute_team_metrics, get_cycle_settings, weekdays_between
+from ..metrics import compute_team_metrics, get_cycle, weekdays_between
 from ..models import (
-    CycleSettings,
+    Cycle,
+    CycleMembership,
     Issue,
     MemberGroup,
-    MemberUnavailability,
     SyncRun,
     Team,
+    TeamCost,
     TeamMember,
+    utcnow,
+)
+from ..sync import (
+    CycleMismatchError,
+    client_from_config,
+    record_sync_run,
+    sync_team_issues,
+    upsert_teams,
 )
 from ..schemas import (
     CycleMemberOut,
+    CycleOut,
     CycleSettingsIn,
     CycleSettingsOut,
     GroupIn,
@@ -28,9 +39,10 @@ from ..schemas import (
     IssueOut,
     RefreshResult,
     SyncRunOut,
+    TeamCostIn,
+    TeamCostOut,
     TeamOut,
 )
-from ..sync import client_from_config, record_sync_run, sync_team_issues, upsert_teams
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -76,6 +88,11 @@ def refresh_team(team_id: int, db: Session = Depends(get_db)) -> RefreshResult:
     try:
         with client_from_config(db) as client:
             summary = sync_team_issues(db, client, team)
+    except CycleMismatchError as exc:
+        record_sync_run(
+            db, kind="issues", status="error", team_id=team.id, message=str(exc), run=run
+        )
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (LinearError, RuntimeError) as exc:
         record_sync_run(
             db, kind="issues", status="error", team_id=team.id, message=str(exc), run=run
@@ -84,13 +101,13 @@ def refresh_team(team_id: int, db: Session = Depends(get_db)) -> RefreshResult:
 
     if summary.has_active_cycle:
         cycle_label = summary.cycle_name or (
-            f"Cycle {summary.cycle_number:g}"
+            f"Cycle {summary.cycle_number}"
             if summary.cycle_number is not None
             else summary.cycle_id
         )
         message = f"Synced {summary.issues_synced} issue(s) from {cycle_label}."
     else:
-        message = "No active cycle for this team; stored issues were cleared."
+        message = "No active cycle for this team."
 
     record_sync_run(
         db,
@@ -119,15 +136,15 @@ def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
     groups/leave) is lost.
     """
     team = _get_team_or_404(db, team_id)
-    # SQLite foreign-key cascades are not enabled, so clear the child rows
-    # explicitly before removing the team.
+    # Clear children explicitly so this still works if a connection does not
+    # have SQLite foreign keys enabled. With PRAGMA foreign_keys=ON the same
+    # deletes also happen via ON DELETE CASCADE / SET NULL.
     db.execute(delete(Issue).where(Issue.team_id == team_id))
-    db.execute(delete(CycleSettings).where(CycleSettings.team_id == team_id))
+    db.execute(delete(CycleMembership).where(CycleMembership.team_id == team_id))
+    db.execute(delete(Cycle).where(Cycle.team_id == team_id))
     db.execute(delete(TeamMember).where(TeamMember.team_id == team_id))
+    db.execute(delete(TeamCost).where(TeamCost.team_id == team_id))
     db.execute(delete(MemberGroup).where(MemberGroup.team_id == team_id))
-    db.execute(
-        delete(MemberUnavailability).where(MemberUnavailability.team_id == team_id)
-    )
     # Keep the sync audit trail but detach it from the deleted team.
     db.execute(update(SyncRun).where(SyncRun.team_id == team_id).values(team_id=None))
     db.delete(team)
@@ -135,17 +152,33 @@ def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
     return Response(status_code=204)
 
 
+def _resolve_cycle(
+    db: Session, team: Team, cycle_id: int | None
+) -> Cycle | None:
+    """Resolve an optional cycle id; 404 if the client named a missing cycle."""
+    if cycle_id is None:
+        return get_cycle(db, team)
+    cycle = get_cycle(db, team, cycle_id)
+    if cycle is None:
+        raise HTTPException(status_code=404, detail=f"Cycle {cycle_id} not found.")
+    return cycle
+
+
 @router.get("/{team_id}/issues", response_model=list[IssueOut])
 def list_issues(
     team_id: int,
     db: Session = Depends(get_db),
+    cycle_id: int | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[Issue]:
-    _get_team_or_404(db, team_id)
+    team = _get_team_or_404(db, team_id)
+    settings = _resolve_cycle(db, team, cycle_id)
+    if settings is None:
+        return []
     stmt = (
         select(Issue)
-        .where(Issue.team_id == team_id)
+        .where(Issue.team_id == team_id, Issue.cycle_id == settings.id)
         .order_by(Issue.updated_at.desc().nullslast())
         .limit(limit)
         .offset(offset)
@@ -169,27 +202,49 @@ def list_sync_runs(
     return list(db.scalars(stmt).all())
 
 
-def _cycle_out(db: Session, team: Team) -> CycleSettingsOut:
-    """Build the cycle-settings view from the stored settings + membership."""
-    metrics = compute_team_metrics(db, team)
-    settings = get_cycle_settings(db, team)
+def _cycle_memberships(db: Session, team_id: int, cycle_id: int) -> dict[str, CycleMembership]:
+    return {
+        row.member_linear_id: row
+        for row in db.scalars(
+            select(CycleMembership).where(
+                CycleMembership.team_id == team_id,
+                CycleMembership.cycle_id == cycle_id,
+            )
+        ).all()
+    }
 
-    overrides: dict[str, float] = {}
-    if settings is not None:
-        overrides = {
-            row.member_linear_id: row.unavailable_days
-            for row in db.scalars(
-                select(MemberUnavailability).where(
-                    MemberUnavailability.team_id == team.id,
-                    MemberUnavailability.cycle_id == settings.cycle_id,
-                )
-            ).all()
-        }
 
+def _cycle_out(
+    db: Session, team: Team, cycle: Cycle | None = None
+) -> CycleSettingsOut:
+    """Build the cycle-settings view from the stored cycle + membership."""
+    settings = cycle if cycle is not None else get_cycle(db, team)
+    metrics = compute_team_metrics(db, team, cycle=settings)
+
+    snapshots = (
+        _cycle_memberships(db, team.id, settings.id) if settings is not None else {}
+    )
     members = list(
         db.scalars(select(TeamMember).where(TeamMember.team_id == team.id)).all()
     )
-    members.sort(key=lambda member: (member.display_name or member.name or "").lower())
+    member_by_id = {member.linear_id: member for member in members}
+
+    # Current cycle: live roster. Historical cycle: whoever was snapshotted.
+    if settings is not None and settings.id != team.current_cycle_id:
+        linear_ids = list(snapshots)
+    else:
+        linear_ids = [member.linear_id for member in members]
+        for linear_id in snapshots:
+            if linear_id not in member_by_id:
+                linear_ids.append(linear_id)
+
+    def _sort_key(linear_id: str) -> str:
+        member = member_by_id.get(linear_id)
+        if member is not None:
+            return (member.display_name or member.name or linear_id).lower()
+        return linear_id.lower()
+
+    linear_ids.sort(key=_sort_key)
 
     groups = list(
         db.scalars(
@@ -205,6 +260,7 @@ def _cycle_out(db: Session, team: Team) -> CycleSettingsOut:
         ready=metrics.ready,
         message=metrics.message,
         cycle_id=metrics.cycle_id,
+        cycle_linear_id=metrics.cycle_linear_id,
         cycle_name=metrics.cycle_name,
         cycle_number=metrics.cycle_number,
         starts_at=metrics.starts_at,
@@ -212,32 +268,89 @@ def _cycle_out(db: Session, team: Team) -> CycleSettingsOut:
         working_days=metrics.working_days,
         default_working_days=metrics.default_working_days,
         working_days_overridden=metrics.working_days_overridden,
+        archived_at=settings.archived_at if settings is not None else None,
+        is_current=(
+            settings is not None and settings.id == team.current_cycle_id
+        ),
         points_per_day=metrics.points_per_day,
         groups=[GroupOut.model_validate(group) for group in groups],
         members=[
             CycleMemberOut(
-                linear_id=member.linear_id,
-                name=member.display_name or member.name or member.linear_id,
-                email=member.email,
-                group_id=member.group_id,
+                linear_id=linear_id,
+                name=(
+                    (member_by_id[linear_id].display_name or member_by_id[linear_id].name)
+                    if linear_id in member_by_id
+                    else None
+                )
+                or linear_id,
+                email=member_by_id[linear_id].email if linear_id in member_by_id else None,
+                group_id=snapshots[linear_id].group_id if linear_id in snapshots else None,
                 group_name=(
-                    group_name_by_id.get(member.group_id)
-                    if member.group_id is not None
+                    group_name_by_id.get(snapshots[linear_id].group_id)
+                    if linear_id in snapshots and snapshots[linear_id].group_id is not None
                     else None
                 ),
-                unavailable_days=overrides.get(member.linear_id, 0.0),
-                counts_toward_capacity=bool(member.counts_toward_capacity),
+                unavailable_days=(
+                    snapshots[linear_id].unavailable_days if linear_id in snapshots else 0.0
+                ),
+                counts_toward_capacity=(
+                    bool(snapshots[linear_id].counts_toward_capacity)
+                    if linear_id in snapshots
+                    else True
+                ),
             )
-            for member in members
+            for linear_id in linear_ids
         ],
     )
 
 
-@router.get("/{team_id}/cycle", response_model=CycleSettingsOut)
-def read_cycle_settings(team_id: int, db: Session = Depends(get_db)) -> CycleSettingsOut:
-    """Current cycle dates, working-day override and per-member leave."""
+@router.get("/{team_id}/cycles", response_model=list[CycleOut])
+def list_cycles(team_id: int, db: Session = Depends(get_db)) -> list[CycleOut]:
+    """Every stored cycle for a team, newest first."""
     team = _get_team_or_404(db, team_id)
-    return _cycle_out(db, team)
+    rows = list(
+        db.scalars(
+            select(Cycle)
+            .where(Cycle.team_id == team.id)
+            .order_by(Cycle.number.desc().nullslast(), Cycle.id.desc())
+        ).all()
+    )
+    return [
+        CycleOut(
+            id=row.id,
+            linear_id=row.linear_id,
+            name=row.name,
+            number=row.number,
+            starts_at=row.starts_at,
+            ends_at=row.ends_at,
+            archived_at=row.archived_at,
+            is_current=row.id == team.current_cycle_id,
+        )
+        for row in rows
+    ]
+
+
+@router.get("/{team_id}/cycle", response_model=CycleSettingsOut)
+def read_cycle_settings(
+    team_id: int,
+    db: Session = Depends(get_db),
+    cycle_id: int | None = Query(default=None),
+) -> CycleSettingsOut:
+    """Cycle dates, working-day override and per-member leave."""
+    team = _get_team_or_404(db, team_id)
+    return _cycle_out(db, team, _resolve_cycle(db, team, cycle_id))
+
+
+def _snapshot_row(
+    db: Session, team_id: int, cycle_id: int, linear_id: str
+) -> CycleMembership | None:
+    return db.scalar(
+        select(CycleMembership).where(
+            CycleMembership.team_id == team_id,
+            CycleMembership.cycle_id == cycle_id,
+            CycleMembership.member_linear_id == linear_id,
+        )
+    )
 
 
 @router.put("/{team_id}/cycle", response_model=CycleSettingsOut)
@@ -245,14 +358,23 @@ def update_cycle_settings(
     team_id: int,
     payload: CycleSettingsIn,
     db: Session = Depends(get_db),
+    cycle_id: int | None = Query(default=None),
 ) -> CycleSettingsOut:
-    """Update working days, cycle dates and per-member unavailable days."""
+    """Update working days, cycle dates and the per-member cycle snapshot."""
     team = _get_team_or_404(db, team_id)
-    settings = get_cycle_settings(db, team)
+    settings = _resolve_cycle(db, team, cycle_id)
     if settings is None:
         raise HTTPException(
             status_code=400,
             detail="No active cycle stored for this team. Refresh the team first.",
+        )
+
+    finalized = settings.archived_at is not None
+    cycle_fields = payload.model_fields_set & {"starts_at", "ends_at", "working_days"}
+    if finalized and cycle_fields:
+        raise HTTPException(
+            status_code=409,
+            detail="This cycle is finalized and its dates / working days cannot be edited.",
         )
 
     if payload.starts_at is not None or payload.ends_at is not None:
@@ -283,40 +405,114 @@ def update_cycle_settings(
                 TeamMember.linear_id == entry.linear_id,
             )
         )
-        if member is not None and entry.counts_toward_capacity is not None:
-            member.counts_toward_capacity = entry.counts_toward_capacity
-        # `group_id` may legitimately be null (clearing the assignment), so only
-        # touch it when the client actually sent the field.
-        if member is not None and "group_id" in entry.model_fields_set:
-            if entry.group_id is not None and entry.group_id not in valid_group_ids:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Group {entry.group_id} does not belong to this team.",
-                )
-            member.group_id = entry.group_id
-
-        row = db.scalar(
-            select(MemberUnavailability).where(
-                MemberUnavailability.team_id == team.id,
-                MemberUnavailability.cycle_id == settings.cycle_id,
-                MemberUnavailability.member_linear_id == entry.linear_id,
-            )
+        row = _snapshot_row(db, team.id, settings.id, entry.linear_id)
+        stored_leave = row.unavailable_days if row is not None else 0.0
+        stored_counts = row.counts_toward_capacity if row is not None else True
+        stored_group = row.group_id if row is not None else None
+        next_counts = (
+            entry.counts_toward_capacity
+            if entry.counts_toward_capacity is not None
+            else stored_counts
         )
-        if entry.unavailable_days <= 0:
-            if row is not None:
-                db.delete(row)
+        next_group = entry.group_id if "group_id" in entry.model_fields_set else stored_group
+        if next_group is not None and next_group not in valid_group_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Group {entry.group_id} does not belong to this team.",
+            )
+
+        if finalized:
+            if (
+                abs(entry.unavailable_days - stored_leave) > 1e-9
+                or next_counts != stored_counts
+                or next_group != stored_group
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "This cycle is finalized and its member snapshot "
+                        "(group, capacity, leave) cannot be edited."
+                    ),
+                )
+            continue
+
+        if member is None and row is None:
             continue
         if row is None:
-            row = MemberUnavailability(
+            row = CycleMembership(
                 team_id=team.id,
-                cycle_id=settings.cycle_id,
+                cycle_id=settings.id,
+                member_id=member.id if member is not None else None,
                 member_linear_id=entry.linear_id,
             )
             db.add(row)
+        if member is not None:
+            row.member_id = member.id
         row.unavailable_days = entry.unavailable_days
+        row.counts_toward_capacity = next_counts
+        if "group_id" in entry.model_fields_set:
+            row.group_id = entry.group_id
 
     db.commit()
-    return _cycle_out(db, team)
+    return _cycle_out(db, team, settings)
+
+
+@router.post("/{team_id}/cycle/finalize", response_model=CycleSettingsOut)
+def finalize_cycle(team_id: int, db: Session = Depends(get_db)) -> CycleSettingsOut:
+    """Mark the team's current cycle as finalized (frozen).
+
+    Finalization preserves the cycle's data and is required before a refresh can
+    switch the team to a newer cycle. It is scoped to one team, so teams on
+    different cycle schedules roll over independently.
+    """
+    team = _get_team_or_404(db, team_id)
+    settings = get_cycle(db, team)
+    if settings is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No active cycle stored for this team. Refresh the team first.",
+        )
+    if settings.archived_at is None:
+        settings.archived_at = utcnow()
+        db.commit()
+    return _cycle_out(db, team, settings)
+
+
+# ---------------------------------------------------------------------------
+# Per-team cost configuration
+# ---------------------------------------------------------------------------
+
+
+def _cost_out(team_id: int, view: TeamCostView) -> TeamCostOut:
+    return TeamCostOut(
+        team_id=team_id,
+        currency=view.currency,
+        man_day_cost=view.man_day_cost,
+    )
+
+
+@router.get("/{team_id}/cost", response_model=TeamCostOut)
+def read_team_cost(team_id: int, db: Session = Depends(get_db)) -> TeamCostOut:
+    """A team's currency symbol and man-day cost."""
+    team = _get_team_or_404(db, team_id)
+    return _cost_out(team.id, get_team_cost(db, team.id))
+
+
+@router.put("/{team_id}/cost", response_model=TeamCostOut)
+def update_team_cost(
+    team_id: int, payload: TeamCostIn, db: Session = Depends(get_db)
+) -> TeamCostOut:
+    """Save a team's currency symbol and man-day cost."""
+    team = _get_team_or_404(db, team_id)
+    row = db.scalar(select(TeamCost).where(TeamCost.team_id == team.id))
+    if row is None:
+        row = TeamCost(team_id=team.id)
+        db.add(row)
+    row.currency = payload.currency
+    row.man_day_cost = payload.man_day_cost
+    db.commit()
+    db.refresh(row)
+    return _cost_out(team.id, get_team_cost(db, team.id))
 
 
 # ---------------------------------------------------------------------------
@@ -408,9 +604,23 @@ def delete_group(
     """Remove a group, unassigning any members that belonged to it."""
     _get_team_or_404(db, team_id)
     group = _group_or_404(db, team_id, group_id)
+    finalized_use = db.scalar(
+        select(CycleMembership.id)
+        .join(Cycle, Cycle.id == CycleMembership.cycle_id)
+        .where(
+            CycleMembership.group_id == group.id,
+            Cycle.archived_at.is_not(None),
+        )
+        .limit(1)
+    )
+    if finalized_use is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Group is used by a finalized cycle and cannot be deleted.",
+        )
     db.execute(
-        update(TeamMember)
-        .where(TeamMember.group_id == group.id)
+        update(CycleMembership)
+        .where(CycleMembership.group_id == group.id)
         .values(group_id=None)
     )
     db.delete(group)

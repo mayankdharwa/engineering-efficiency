@@ -1,12 +1,14 @@
 import type {
   AppSettingsOut,
   ConnectionTestOut,
+  CycleOut,
   CycleSettingsIn,
   CycleSettingsOut,
   GroupOut,
   IssueOut,
   LinearConfigOut,
   RefreshResult,
+  TeamCostOut,
   TeamOut,
   TeamStatsOut,
 } from './types'
@@ -59,13 +61,48 @@ export const api = {
   deleteTeam: (teamId: number) =>
     request<void>(`/teams/${teamId}`, { method: 'DELETE' }),
 
-  listIssues: (teamId: number) => request<IssueOut[]>(`/teams/${teamId}/issues`),
-  getStats: (teamId: number) => request<TeamStatsOut>(`/teams/${teamId}/stats`),
+  listIssues: (teamId: number, cycleId?: number | null) =>
+    request<IssueOut[]>(
+      cycleId != null
+        ? `/teams/${teamId}/issues?cycle_id=${cycleId}`
+        : `/teams/${teamId}/issues`,
+    ),
+  getStats: (teamId: number, cycleId?: number | null) =>
+    request<TeamStatsOut>(
+      cycleId != null
+        ? `/teams/${teamId}/stats?cycle_id=${cycleId}`
+        : `/teams/${teamId}/stats`,
+    ),
 
-  getCycleSettings: (teamId: number) =>
-    request<CycleSettingsOut>(`/teams/${teamId}/cycle`),
-  updateCycleSettings: (teamId: number, payload: CycleSettingsIn) =>
-    request<CycleSettingsOut>(`/teams/${teamId}/cycle`, {
+  listCycles: (teamId: number) => request<CycleOut[]>(`/teams/${teamId}/cycles`),
+  getCycleSettings: (teamId: number, cycleId?: number | null) =>
+    request<CycleSettingsOut>(
+      cycleId != null
+        ? `/teams/${teamId}/cycle?cycle_id=${cycleId}`
+        : `/teams/${teamId}/cycle`,
+    ),
+  updateCycleSettings: (
+    teamId: number,
+    payload: CycleSettingsIn,
+    cycleId?: number | null,
+  ) =>
+    request<CycleSettingsOut>(
+      cycleId != null
+        ? `/teams/${teamId}/cycle?cycle_id=${cycleId}`
+        : `/teams/${teamId}/cycle`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    ),
+  finalizeCycle: (teamId: number) =>
+    request<CycleSettingsOut>(`/teams/${teamId}/cycle/finalize`, {
+      method: 'POST',
+    }),
+
+  getTeamCost: (teamId: number) => request<TeamCostOut>(`/teams/${teamId}/cost`),
+  updateTeamCost: (teamId: number, payload: { currency: string; man_day_cost: number }) =>
+    request<TeamCostOut>(`/teams/${teamId}/cost`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),

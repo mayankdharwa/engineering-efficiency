@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from .linear_client import LinearClient
 from .models import (
-    CycleSettings,
+    Cycle,
+    CycleMembership,
     Issue,
     LinearConfig,
     SyncRun,
@@ -30,9 +31,18 @@ class SyncSummary:
     members_synced: int = 0
     cycle_id: str | None = None
     cycle_name: str | None = None
-    cycle_number: float | None = None
+    cycle_number: int | None = None
     cycle_starts_at: datetime | None = None
     cycle_ends_at: datetime | None = None
+
+
+class CycleMismatchError(RuntimeError):
+    """Raised when Linear's active cycle differs from the locally stored one.
+
+    Refreshing would replace the stored cycle's issues, so the current cycle
+    must be finalized first (see the finalize endpoint) to avoid discarding
+    unarchived data.
+    """
 
 
 def parse_dt(value: str | None) -> datetime | None:
@@ -42,6 +52,15 @@ def parse_dt(value: str | None) -> datetime | None:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
+        return None
+
+
+def _as_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
         return None
 
 
@@ -103,20 +122,17 @@ def upsert_teams(db: Session, client: LinearClient) -> list[Team]:
     return result
 
 
-def _build_issue(
-    team: Team, remote: dict[str, Any], cycle: dict[str, Any] | None
-) -> Issue:
+def _build_issue(team: Team, remote: dict[str, Any], cycle: Cycle) -> Issue:
     issue = Issue(linear_id=remote["id"])
 
     state = remote.get("state") or {}
     assignee = remote.get("assignee") or {}
     creator = remote.get("creator") or {}
     project = remote.get("project") or {}
-    # Prefer the active cycle resolved for the team; fall back to the issue's own.
-    cycle = cycle or remote.get("cycle") or {}
     labels = (remote.get("labels") or {}).get("nodes") or []
 
     issue.team_id = team.id
+    issue.cycle_id = cycle.id
     issue.identifier = remote.get("identifier") or ""
     issue.title = remote.get("title") or ""
     issue.description = remote.get("description")
@@ -128,9 +144,6 @@ def _build_issue(
     issue.assignee_name = assignee.get("displayName") or assignee.get("name")
     issue.creator_name = creator.get("displayName") or creator.get("name")
     issue.project_name = project.get("name")
-    issue.cycle_id = cycle.get("id")
-    issue.cycle_name = cycle.get("name")
-    issue.cycle_number = cycle.get("number")
     issue.labels = [node.get("name") for node in labels if node.get("name")]
     issue.added_to_cycle_at = parse_dt(remote.get("addedToCycleAt"))
     issue.created_at = parse_dt(remote.get("createdAt"))
@@ -143,27 +156,24 @@ def _build_issue(
     return issue
 
 
-def upsert_cycle_settings(
-    db: Session, team: Team, cycle: dict[str, Any]
-) -> CycleSettings:
-    """Seed/refresh the settings row for a cycle, preserving user overrides."""
-    cycle_id = cycle["id"]
-    settings = db.scalar(
-        select(CycleSettings).where(
-            CycleSettings.team_id == team.id, CycleSettings.cycle_id == cycle_id
-        )
+def upsert_cycle(db: Session, team: Team, cycle: dict[str, Any]) -> Cycle:
+    """Seed/refresh the cycle row, preserving user overrides."""
+    linear_id = cycle["id"]
+    row = db.scalar(
+        select(Cycle).where(Cycle.team_id == team.id, Cycle.linear_id == linear_id)
     )
-    if settings is None:
-        settings = CycleSettings(team_id=team.id, cycle_id=cycle_id)
-        db.add(settings)
+    if row is None:
+        row = Cycle(team_id=team.id, linear_id=linear_id)
+        db.add(row)
 
-    settings.cycle_name = cycle.get("name")
-    settings.cycle_number = cycle.get("number")
+    row.name = cycle.get("name")
+    row.number = _as_int(cycle.get("number"))
     # Only overwrite dates from Linear while the user has not edited them.
-    if not settings.dates_overridden:
-        settings.starts_at = parse_dt(cycle.get("startsAt"))
-        settings.ends_at = parse_dt(cycle.get("endsAt"))
-    return settings
+    if not row.dates_overridden:
+        row.starts_at = parse_dt(cycle.get("startsAt"))
+        row.ends_at = parse_dt(cycle.get("endsAt"))
+    db.flush()
+    return row
 
 
 def upsert_team_members(
@@ -171,10 +181,8 @@ def upsert_team_members(
 ) -> list[TeamMember]:
     """Upsert the team's Linear membership, keyed by Linear user id.
 
-    New members default to counting toward capacity unless they are inactive or
-    not assignable (guests). The flag is preserved on existing rows so manual
-    overrides survive refreshes. Members no longer returned by Linear are
-    removed from the team.
+    Members no longer returned by Linear are removed from the team. Group,
+    capacity and leave live on the cycle snapshot, not on this roster row.
     """
     existing = {
         member.linear_id: member
@@ -189,13 +197,7 @@ def upsert_team_members(
         remote_ids.add(remote["id"])
         member = existing.get(remote["id"])
         if member is None:
-            member = TeamMember(
-                team_id=team.id,
-                linear_id=remote["id"],
-                counts_toward_capacity=bool(
-                    remote.get("active", True) and remote.get("isAssignable", True)
-                ),
-            )
+            member = TeamMember(team_id=team.id, linear_id=remote["id"])
             db.add(member)
         member.name = remote.get("name")
         member.display_name = remote.get("displayName") or remote.get("name")
@@ -216,16 +218,133 @@ def upsert_team_members(
     return result
 
 
+def ensure_cycle_memberships(
+    db: Session,
+    team: Team,
+    cycle: Cycle,
+    *,
+    source_cycle_id: int | None = None,
+    members: list[TeamMember] | None = None,
+) -> list[CycleMembership]:
+    """Make sure every current team member has a snapshot row for ``cycle``.
+
+    Existing rows are left alone. Missing rows copy group and capacity from
+    ``source_cycle_id`` when present (a previous cycle); leave always starts at
+    zero. New members with no source default to counting toward capacity when
+    they are active and assignable.
+    """
+    roster = members
+    if roster is None:
+        roster = list(
+            db.scalars(select(TeamMember).where(TeamMember.team_id == team.id)).all()
+        )
+    existing = {
+        row.member_linear_id: row
+        for row in db.scalars(
+            select(CycleMembership).where(
+                CycleMembership.team_id == team.id,
+                CycleMembership.cycle_id == cycle.id,
+            )
+        ).all()
+    }
+    source: dict[str, CycleMembership] = {}
+    if source_cycle_id is not None and source_cycle_id != cycle.id:
+        source = {
+            row.member_linear_id: row
+            for row in db.scalars(
+                select(CycleMembership).where(
+                    CycleMembership.team_id == team.id,
+                    CycleMembership.cycle_id == source_cycle_id,
+                )
+            ).all()
+        }
+
+    result: list[CycleMembership] = list(existing.values())
+    for member in roster:
+        row = existing.get(member.linear_id)
+        if row is not None:
+            if row.member_id is None:
+                row.member_id = member.id
+            continue
+        previous = source.get(member.linear_id)
+        counts = (
+            previous.counts_toward_capacity
+            if previous is not None
+            else bool(member.active and member.is_assignable)
+        )
+        row = CycleMembership(
+            team_id=team.id,
+            cycle_id=cycle.id,
+            member_id=member.id,
+            member_linear_id=member.linear_id,
+            group_id=previous.group_id if previous is not None else None,
+            counts_toward_capacity=counts,
+            unavailable_days=0.0,
+        )
+        db.add(row)
+        result.append(row)
+    return result
+
+
+def _cycle_label(cycle: dict[str, Any] | None, cycle_id: str | None) -> str:
+    """Human label for a Linear cycle payload."""
+    if cycle is not None:
+        name = cycle.get("name")
+        if name:
+            return f"cycle '{name}'"
+        number = cycle.get("number")
+        if number is not None:
+            return f"cycle {number:g}"
+    if cycle_id:
+        return f"cycle '{cycle_id}'"
+    return "no active cycle"
+
+
+def _stored_cycle(db: Session, team: Team) -> Cycle | None:
+    if not team.current_cycle_id:
+        return None
+    return db.get(Cycle, team.current_cycle_id)
+
+
+def _stored_cycle_label(db: Session, team: Team) -> str:
+    """Human label for the cycle currently stored for a team."""
+    stored = _stored_cycle(db, team)
+    if stored is None:
+        return "no cycle"
+    if stored.name:
+        return f"cycle '{stored.name}'"
+    if stored.number is not None:
+        return f"cycle {stored.number}"
+    return f"cycle '{stored.linear_id}'"
+
+
 def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSummary:
     """Download the team's current cycle, its issues and membership.
 
-    Only issues from the team's active cycle are kept, so a refresh clears any
-    issues from a previously active cycle. Cycle settings and members are
-    upserted so user overrides survive refreshes.
+    Only the active cycle's issues are replaced. Earlier (finalized) cycles are
+    kept so the database retains per-team cycle history. Cycle rows and members
+    are upserted so user overrides survive refreshes.
     """
     # Fetch everything from Linear first; nothing is committed unless all calls
     # succeed.
     cycle, remote_issues = client.current_cycle_issues(team.linear_id)
+
+    # Guard against silently replacing a cycle that hasn't been finalized: if
+    # Linear has moved on, the stored cycle must be finalized first. A finalized
+    # (archived) cycle is allowed to give way to the new one.
+    remote_cycle_id = cycle["id"] if cycle is not None else None
+    stored = _stored_cycle(db, team)
+    stored_linear_id = stored.linear_id if stored is not None else None
+    if team.current_cycle_id is not None and remote_cycle_id != stored_linear_id:
+        finalized = stored is not None and stored.archived_at is not None
+        if not finalized:
+            raise CycleMismatchError(
+                "Linear is now on "
+                f"{_cycle_label(cycle, remote_cycle_id)}, but "
+                f"{_stored_cycle_label(db, team)} is stored locally. "
+                "Finalize the current cycle in Cycle Configuration before refreshing."
+            )
+
     remote_members = client.team_members(team.linear_id)
 
     # Sub-issues are not tracked separately: their estimates would double-count
@@ -233,29 +352,50 @@ def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSumma
     # per-person totals exclude them).
     issues = [remote for remote in remote_issues if not remote.get("parent")]
 
-    db.execute(delete(Issue).where(Issue.team_id == team.id))
-    for remote in issues:
-        db.add(_build_issue(team, remote, cycle))
-
+    previous_cycle_id = team.current_cycle_id
     if cycle is not None:
-        upsert_cycle_settings(db, team, cycle)
-        team.current_cycle_id = cycle["id"]
+        cycle_row = upsert_cycle(db, team, cycle)
+        # Replace only this cycle's issues; earlier cycles stay put, including
+        # carry-over work that now also belongs to the new cycle.
+        db.execute(
+            delete(Issue).where(
+                Issue.team_id == team.id,
+                Issue.cycle_id == cycle_row.id,
+            )
+        )
+        for remote in issues:
+            db.add(_build_issue(team, remote, cycle_row))
+        team.current_cycle_id = cycle_row.id
+        team.issue_count = len(issues)
     else:
+        # Linear has no active cycle. Keep historical issues; just clear the
+        # current-cycle pointer. Do not insert issues without a cycle row.
+        cycle_row = None
         team.current_cycle_id = None
+        team.issue_count = 0
 
     members = upsert_team_members(db, team, remote_members)
+    db.flush()
+    if cycle_row is not None:
+        source_id = (
+            previous_cycle_id
+            if previous_cycle_id is not None and previous_cycle_id != cycle_row.id
+            else None
+        )
+        ensure_cycle_memberships(
+            db, team, cycle_row, source_cycle_id=source_id, members=members
+        )
 
-    team.issue_count = len(issues)
     team.last_synced_at = utcnow()
     db.commit()
 
     return SyncSummary(
-        issues_synced=len(issues),
+        issues_synced=len(issues) if cycle is not None else 0,
         has_active_cycle=cycle is not None,
         members_synced=len(members),
         cycle_id=(cycle or {}).get("id"),
         cycle_name=(cycle or {}).get("name"),
-        cycle_number=(cycle or {}).get("number"),
+        cycle_number=_as_int((cycle or {}).get("number")),
         cycle_starts_at=parse_dt((cycle or {}).get("startsAt")),
         cycle_ends_at=parse_dt((cycle or {}).get("endsAt")),
     )

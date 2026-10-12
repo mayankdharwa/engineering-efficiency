@@ -63,3 +63,17 @@ export function formatPoints(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
+
+/** Format a monetary amount with a currency symbol (e.g. "€1,200" or "$112.5"). */
+export function formatMoney(
+  value: number | null | undefined,
+  currency: string,
+  maximumFractionDigits = 2,
+): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  const formatted = value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  })
+  return `${currency}${formatted}`
+}

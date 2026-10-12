@@ -22,6 +22,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '../api'
+import { CycleSelect } from '../components/CycleSelect'
 import { GroupFilterSelect } from '../components/GroupFilterSelect'
 import { GroupMetricsTable } from '../components/GroupMetricsTable'
 import { IssuesTable } from '../components/IssuesTable'
@@ -37,11 +38,15 @@ import {
 import {
   formatCycle,
   formatDate,
+  formatMoney,
   formatPercent,
   formatPoints,
   formatRelative,
 } from '../lib/format'
 import type { GroupOut } from '../types'
+
+/** A man-day's worth of work; costs are derived from points at this rate. */
+const POINTS_PER_DAY = 2
 
 function StatCard({
   label,
@@ -69,6 +74,7 @@ export function DashboardPage() {
   const queryClient = useQueryClient()
   const timezone = useTimezone()
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+  const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null)
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
   const [showDone, setShowDone] = useState(false)
 
@@ -89,18 +95,36 @@ export function DashboardPage() {
   // Group ids are team-specific, so clear the filter when the team changes.
   useEffect(() => {
     setSelectedGroups(new Set())
+    setSelectedCycleId(null)
   }, [selectedTeamId])
 
-  const issuesQuery = useQuery({
-    queryKey: ['issues', selectedTeamId],
-    queryFn: () => api.listIssues(selectedTeamId as number),
+  const cyclesQuery = useQuery({
+    queryKey: ['cycles', selectedTeamId],
+    queryFn: () => api.listCycles(selectedTeamId as number),
     enabled: selectedTeamId !== null,
+  })
+  const cycles = cyclesQuery.data ?? []
+
+  useEffect(() => {
+    if (cycles.length === 0) return
+    if (selectedCycleId === null || !cycles.some((cycle) => cycle.id === selectedCycleId)) {
+      const current = cycles.find((cycle) => cycle.is_current)
+      setSelectedCycleId(current?.id ?? cycles[0].id)
+    }
+  }, [cycles, selectedCycleId])
+
+  const selectedCycle = cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
+
+  const issuesQuery = useQuery({
+    queryKey: ['issues', selectedTeamId, selectedCycleId],
+    queryFn: () => api.listIssues(selectedTeamId as number, selectedCycleId),
+    enabled: selectedTeamId !== null && selectedCycleId !== null,
   })
 
   const statsQuery = useQuery({
-    queryKey: ['stats', selectedTeamId],
-    queryFn: () => api.getStats(selectedTeamId as number),
-    enabled: selectedTeamId !== null,
+    queryKey: ['stats', selectedTeamId, selectedCycleId],
+    queryFn: () => api.getStats(selectedTeamId as number, selectedCycleId),
+    enabled: selectedTeamId !== null && selectedCycleId !== null,
   })
 
   const refreshMutation = useMutation({
@@ -108,6 +132,7 @@ export function DashboardPage() {
     onSuccess: (_result, teamId) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] })
       queryClient.invalidateQueries({ queryKey: ['issues', teamId] })
+      queryClient.invalidateQueries({ queryKey: ['cycles', teamId] })
       queryClient.invalidateQueries({ queryKey: ['cycle', teamId] })
       queryClient.invalidateQueries({ queryKey: ['stats', teamId] })
     },
@@ -145,6 +170,14 @@ export function DashboardPage() {
   const groupOptions: GroupOut[] = (stats?.groups ?? [])
     .filter((group) => group.group_id !== null)
     .map((group) => ({ id: group.group_id as number, name: group.label }))
+
+  // Costs: each man-day is POINTS_PER_DAY points, so points convert to man-days
+  // at 1 / POINTS_PER_DAY. Unutilized capacity is capacity that was not taken.
+  const manDayCost = stats?.man_day_cost ?? 0
+  const currency = stats?.currency ?? '$'
+  const adhocCost = (summary.adhoc / POINTS_PER_DAY) * manDayCost
+  const unutilizedPoints = Math.max(0, summary.capacity - summary.taken)
+  const unutilizedCost = (unutilizedPoints / POINTS_PER_DAY) * manDayCost
 
   return (
     <div className="flex flex-col gap-6">
@@ -190,11 +223,17 @@ export function DashboardPage() {
                 </Select>
                 {selectedTeam && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {selectedTeam.issue_count} stored issue(s) · synced{' '}
+                    {selectedTeam.issue_count} current-cycle issue(s) · synced{' '}
                     {formatRelative(selectedTeam.last_synced_at)}
                   </p>
                 )}
               </div>
+              <CycleSelect
+                cycles={cycles}
+                value={selectedCycleId}
+                onChange={setSelectedCycleId}
+                labelled={false}
+              />
               <div className="w-44 shrink-0">
                 <GroupFilterSelect
                   groups={groupOptions}
@@ -279,6 +318,29 @@ export function DashboardPage() {
                       : 'attached after the first day'
                   }
                 />
+                <StatCard
+                  label="Cost of adhoc work"
+                  value={formatMoney(adhocCost, currency)}
+                  hint={
+                    manDayCost > 0
+                      ? `${formatPoints(summary.adhoc)} pts adhoc · ${formatMoney(
+                          manDayCost,
+                          currency,
+                        )}/day`
+                      : 'Set a man-day cost in Configuration'
+                  }
+                />
+                <StatCard
+                  label="Unutilized capacity cost"
+                  value={formatMoney(unutilizedCost, currency)}
+                  hint={
+                    manDayCost > 0
+                      ? `${formatPoints(unutilizedPoints)} of ${formatPoints(
+                          summary.capacity,
+                        )} pts unallocated`
+                      : 'Set a man-day cost in Configuration'
+                  }
+                />
               </div>
 
               <MetricCharts members={chartMembers} />
@@ -289,7 +351,8 @@ export function DashboardPage() {
                 <CardHeader className="border-b">
                   <CardTitle>Group breakdown</CardTitle>
                   <CardDescription>
-                    Team totals grouped by member group. Add and assign groups in Configuration.
+                    Team totals grouped by member group for the selected cycle. Add and assign
+                    groups in Configuration.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -315,7 +378,9 @@ export function DashboardPage() {
             <CardHeader className="border-b">
               <CardTitle>Issues</CardTitle>
               <CardDescription>
-                Issues downloaded from the team&apos;s current cycle.
+                {selectedCycle && !selectedCycle.is_current
+                  ? "Issues stored for the selected cycle."
+                  : "Issues downloaded from the team's current cycle."}
               </CardDescription>
               {!issuesQuery.isLoading && !issuesQuery.isError && (
                 <CardAction>

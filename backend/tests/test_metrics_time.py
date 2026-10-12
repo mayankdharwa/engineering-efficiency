@@ -17,7 +17,7 @@ from app.metrics import (
     elapsed_working_days,
     weekdays_between,
 )
-from app.models import AppSettings, CycleSettings, Issue, Team
+from app.models import AppSettings, Cycle, Issue, Team
 
 UTC_ZONE = ZoneInfo("UTC")
 KOLKATA = ZoneInfo("Asia/Kolkata")
@@ -133,22 +133,23 @@ def test_compute_team_metrics_honours_app_settings(monkeypatch) -> None:
     Base.metadata.create_all(engine)
 
     with Session(engine) as db:
-        team = Team(linear_id="t1", key="ENG", name="Engineering", current_cycle_id="c1")
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
         db.add(team)
-        db.commit()
+        db.flush()
 
         # Cycle starts Monday 2026-10-05 in IST (2026-10-04 18:30 UTC).
         start = datetime(2026, 10, 4, 18, 30, tzinfo=UTC)
         end = datetime(2026, 10, 16, 18, 30, tzinfo=UTC)
-        db.add(
-            CycleSettings(
-                team_id=team.id,
-                cycle_id="c1",
-                starts_at=start,
-                ends_at=end,
-                working_days=10,
-            )
+        cycle = Cycle(
+            team_id=team.id,
+            linear_id="c1",
+            starts_at=start,
+            ends_at=end,
+            working_days=10,
         )
+        db.add(cycle)
+        db.flush()
+        team.current_cycle_id = cycle.id
         db.add(AppSettings(id=1, timezone="Asia/Kolkata", day_cutoff_hour=19))
         # 2026-10-05 00:30 UTC is Monday 06:00 IST (the cycle's first local day,
         # so planned) but Sunday's UTC date is before the start, then Monday's
@@ -161,6 +162,7 @@ def test_compute_team_metrics_honours_app_settings(monkeypatch) -> None:
                 title="Boundary work",
                 estimate=2.0,
                 state_type="started",
+                cycle_id=cycle.id,
                 added_to_cycle_at=datetime(2026, 10, 5, 0, 30, tzinfo=UTC),
             )
         )
@@ -184,4 +186,50 @@ def test_compute_team_metrics_honours_app_settings(monkeypatch) -> None:
         metrics = compute_team_metrics(db, team)
         assert metrics.progress == 0.2
         assert metrics.total_adhoc_points == 2.0
+
+
+def test_compute_team_metrics_only_counts_active_cycle() -> None:
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
+        db.add(team)
+        db.flush()
+        old = Cycle(team_id=team.id, linear_id="c1", working_days=10)
+        current = Cycle(team_id=team.id, linear_id="c2", working_days=10)
+        db.add_all([old, current])
+        db.flush()
+        team.current_cycle_id = current.id
+        # A retained issue from a finalized cycle must not affect the metrics.
+        db.add(
+            Issue(
+                linear_id="i-old",
+                team_id=team.id,
+                identifier="ENG-1",
+                title="Old cycle",
+                estimate=2.0,
+                cycle_id=old.id,
+            )
+        )
+        db.add(
+            Issue(
+                linear_id="i-new",
+                team_id=team.id,
+                identifier="ENG-2",
+                title="Current cycle",
+                estimate=3.0,
+                cycle_id=current.id,
+            )
+        )
+        db.commit()
+
+        metrics = compute_team_metrics(db, team)
+        assert metrics.total_taken_points == 3.0
+        assert metrics.cycle_id == current.id
+        assert metrics.cycle_linear_id == "c2"
+
+        historical = compute_team_metrics(db, team, cycle=old)
+        assert historical.total_taken_points == 2.0
+        assert historical.cycle_id == old.id
 
