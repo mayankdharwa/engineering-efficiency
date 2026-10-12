@@ -17,11 +17,19 @@ export function Layout({ children }: { children: ReactNode }) {
             Engineering Efficiency
           </Link>
           <nav className="flex items-center gap-1">
-            <Link to="/" className={navIdle} activeProps={{ className: navActive }}>
-              Dashboard
+            <Link
+              to="/"
+              className={navIdle}
+              activeProps={{ className: navActive }}
+              activeOptions={{ exact: true }}
+            >
+              Cycles
+            </Link>
+            <Link to="/projects" className={navIdle} activeProps={{ className: navActive }}>
+              Projects
             </Link>
             <Link to="/config" className={navIdle} activeProps={{ className: navActive }}>
-              Configuration
+              Settings
             </Link>
           </nav>
         </div>

@@ -113,4 +113,5 @@ def import_data(payload: dict[str, Any], db: Session = Depends(get_db)) -> DataI
         cycles=result.cycles,
         issues=result.issues,
         members=result.members,
+        projects=result.projects,
     )

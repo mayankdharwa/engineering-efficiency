@@ -1,7 +1,7 @@
 """App-wide metric preferences: working timezone and end-of-day cutoff.
 
 Both values are stored in a singleton :class:`~app.models.AppSettings` row so
-they can be edited from the Configuration page. When no row exists yet the
+they can be edited from the Settings page. When no row exists yet the
 defaults below are used, which matches the previous UTC-date behaviour apart
 from the end-of-day cutoff.
 """

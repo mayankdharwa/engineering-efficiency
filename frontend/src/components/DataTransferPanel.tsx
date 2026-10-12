@@ -29,12 +29,14 @@ function formatCounts(result: {
   cycles: number
   issues: number
   members: number
+  projects: number
 }): string {
   const parts = [
     `${result.teams} team${result.teams === 1 ? '' : 's'}`,
     `${result.cycles} cycle${result.cycles === 1 ? '' : 's'}`,
     `${result.issues} issue${result.issues === 1 ? '' : 's'}`,
     `${result.members} member${result.members === 1 ? '' : 's'}`,
+    `${result.projects} project${result.projects === 1 ? '' : 's'}`,
   ]
   return parts.join(', ')
 }
@@ -71,7 +73,7 @@ export function DataTransferPanel() {
         <CardHeader className="border-b">
           <CardTitle>Export</CardTitle>
           <CardDescription>
-            Download a JSON snapshot of the teams, cycles, issues, groups, costs and
+            Download a JSON snapshot of the teams, cycles, projects, issues, groups, costs and
             settings stored locally. The Linear API key and any other secrets are
             omitted so the file is safe to share.
           </CardDescription>

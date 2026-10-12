@@ -23,6 +23,8 @@ from .models import (
     CycleMembership,
     Issue,
     MemberGroup,
+    Project,
+    ProjectIssue,
     SyncRun,
     Team,
     TeamCost,
@@ -60,6 +62,8 @@ EXPORT_MODELS = (
     TeamCost,
     Issue,
     CycleMembership,
+    Project,
+    ProjectIssue,
     SyncRun,
 )
 TABLE_NAMES = tuple(model.__tablename__ for model in EXPORT_MODELS)
@@ -75,6 +79,7 @@ class ImportResult:
     cycles: int
     issues: int
     members: int
+    projects: int
 
 
 def export_snapshot(db: Session) -> dict[str, Any]:
@@ -107,6 +112,7 @@ def import_snapshot(db: Session, payload: object) -> ImportResult:
         cycles=len(tables["cycles"]),
         issues=len(tables["issues"]),
         members=len(tables["team_members"]),
+        projects=len(tables.get("projects", [])),
     )
 
 

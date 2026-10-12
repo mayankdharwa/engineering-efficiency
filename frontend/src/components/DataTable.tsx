@@ -27,6 +27,8 @@ interface DataTableProps<TData extends RowData> {
   emptyMessage?: string
   /** Column ids that stay left-aligned. Every other column is centered. */
   centerExcept?: readonly string[]
+  onRowClick?: (row: TData) => void
+  isRowSelected?: (row: TData) => boolean
 }
 
 function columnClassName(
@@ -88,6 +90,8 @@ export function DataTable<TData extends RowData>({
   data,
   emptyMessage = 'No rows to show.',
   centerExcept,
+  onRowClick,
+  isRowSelected,
 }: DataTableProps<TData>) {
   const table = useTable({ features: appTableFeatures, columns, data })
   const rows = table.getRowModel().rows
@@ -142,7 +146,16 @@ export function DataTable<TData extends RowData>({
             </TableRow>
           ) : (
             rows.map((row) => (
-              <TableRow key={row.id}>
+              <TableRow
+                key={row.id}
+                data-selected={isRowSelected?.(row.original) || undefined}
+                className={
+                  onRowClick
+                    ? 'cursor-pointer data-[selected=true]:bg-muted'
+                    : undefined
+                }
+                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+              >
                 {row.getAllCells().map((cell) => (
                   <TableCell
                     key={cell.id}

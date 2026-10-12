@@ -156,7 +156,7 @@ export function GroupsPanel() {
           <CardTitle>Groups</CardTitle>
           <CardDescription>
             Add any number of groups and pick a colour for each chip. Assign people in Team
-            Configuration. Group totals drive the dashboard&apos;s group breakdown and filter.
+            Configuration. Group totals drive the Cycles page group breakdown and filter.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">

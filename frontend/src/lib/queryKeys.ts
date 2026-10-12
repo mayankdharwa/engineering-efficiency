@@ -28,6 +28,7 @@ export const queryKeys = {
   allStats: ['stats'] as const,
   groups: (teamId: number | null) => ['groups', teamId] as const,
   teamCost: (teamId: number | null) => ['team-cost', teamId] as const,
+  projects: (teamId: number | null) => ['projects', teamId] as const,
 }
 
 function teamScopedKeys(teamId: number) {
@@ -38,6 +39,7 @@ function teamScopedKeys(teamId: number) {
     queryKeys.stats(teamId),
     queryKeys.groups(teamId),
     queryKeys.teamCost(teamId),
+    queryKeys.projects(teamId),
   ]
 }
 

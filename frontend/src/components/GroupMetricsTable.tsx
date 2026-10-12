@@ -43,7 +43,7 @@ export function GroupMetricsTable({ groups, selected, pointsPerDay }: GroupMetri
       columns={columns}
       data={selectGroups(groups, selected)}
       centerExcept={['label']}
-      emptyMessage="Add groups and assign members in Configuration to see group totals."
+      emptyMessage="Add groups and assign members in Settings to see group totals."
     />
   )
 }

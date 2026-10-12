@@ -8,7 +8,21 @@ import { appTableFeatures } from '../lib/table'
 import type { IssueOut } from '../types'
 import { DataTable, type AppColumnDef } from './DataTable'
 
-const helper = createColumnHelper<typeof appTableFeatures, IssueOut>()
+export type IssueTableRow = Pick<
+  IssueOut,
+  | 'identifier'
+  | 'title'
+  | 'state_name'
+  | 'state_type'
+  | 'estimate'
+  | 'assignee_name'
+  | 'created_at'
+  | 'completed_at'
+> & {
+  project_name?: string | null
+}
+
+const helper = createColumnHelper<typeof appTableFeatures, IssueTableRow>()
 
 const MAX_LABEL_LENGTH = 50
 
@@ -18,7 +32,7 @@ function truncate(value: string | null, max = MAX_LABEL_LENGTH): string {
   return value.length > max ? `${value.slice(0, max)}...` : value
 }
 
-const columns = (timezone: string): AppColumnDef<IssueOut>[] => [
+const columns = (timezone: string, showProject: boolean): AppColumnDef<IssueTableRow>[] => [
   helper.accessor('identifier', {
     header: 'ID',
     cell: (ctx) => (
@@ -45,14 +59,18 @@ const columns = (timezone: string): AppColumnDef<IssueOut>[] => [
     header: 'Assignee',
     cell: (ctx) => ctx.getValue() ?? <span className="text-muted-foreground">Unassigned</span>,
   }),
-  helper.accessor('project_name', {
-    header: 'Project',
-    cell: (ctx) => {
-      const value = ctx.getValue()
-      if (!value) return <span className="text-muted-foreground">—</span>
-      return <span title={value}>{truncate(value)}</span>
-    },
-  }),
+  ...(showProject
+    ? [
+        helper.accessor('project_name', {
+          header: 'Project',
+          cell: (ctx) => {
+            const value = ctx.getValue()
+            if (!value) return <span className="text-muted-foreground">—</span>
+            return <span title={value}>{truncate(value)}</span>
+          },
+        }),
+      ]
+    : []),
   helper.accessor('estimate', {
     header: 'Estimate',
     cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
@@ -72,14 +90,21 @@ const columns = (timezone: string): AppColumnDef<IssueOut>[] => [
 ]
 
 interface IssuesTableProps {
-  issues: IssueOut[]
+  issues: IssueTableRow[]
   /** When false, issues in a completed state are hidden. */
   showDone: boolean
+  showProject?: boolean
+  emptyMessage?: string
 }
 
-export function IssuesTable({ issues, showDone }: IssuesTableProps) {
+export function IssuesTable({
+  issues,
+  showDone,
+  showProject = true,
+  emptyMessage,
+}: IssuesTableProps) {
   const timezone = useTimezone()
-  const tableColumns = useMemo(() => columns(timezone), [timezone])
+  const tableColumns = useMemo(() => columns(timezone, showProject), [timezone, showProject])
   const visible = showDone
     ? issues
     : issues.filter((issue) => !isCompletedState(issue.state_type))
@@ -89,9 +114,10 @@ export function IssuesTable({ issues, showDone }: IssuesTableProps) {
       columns={tableColumns}
       data={visible}
       emptyMessage={
-        issues.length === 0
+        emptyMessage ??
+        (issues.length === 0
           ? 'No issues stored for this team yet. Refresh the team to download data.'
-          : 'No issues match the current filter.'
+          : 'No issues match the current filter.')
       }
     />
   )

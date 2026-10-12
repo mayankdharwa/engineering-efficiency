@@ -16,7 +16,7 @@ function cycleLabel(cycle: CycleOut): string {
   return name
 }
 
-/** Cycle picker used on the dashboard and Cycle Configuration. */
+/** Cycle picker used on Cycles and Cycle Configuration. */
 export function CycleSelect({
   cycles,
   value,

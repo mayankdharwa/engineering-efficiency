@@ -18,7 +18,7 @@ export function ConfigLayout() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Configuration</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
           Connect to Linear, manage the teams and cycle settings stored locally,
           or share a snapshot of that data.
@@ -27,7 +27,7 @@ export function ConfigLayout() {
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <nav
-          aria-label="Configuration sections"
+          aria-label="Settings sections"
           className="flex gap-1 overflow-x-auto pb-1 lg:w-56 lg:shrink-0 lg:flex-col lg:overflow-visible lg:pb-0"
         >
           {SECTIONS.map((section) => (

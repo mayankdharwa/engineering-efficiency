@@ -76,6 +76,54 @@ query TeamCurrentCycleIssues($teamId: String!, $after: String) {
 }
 """
 
+TEAM_PROJECTS_QUERY = """
+query TeamProjects($teamId: String!, $after: String) {
+  team(id: $teamId) {
+    projects(first: 100, after: $after, includeArchived: false) {
+      nodes {
+        id
+        name
+        state
+        startDate
+        targetDate
+        completedAt
+        canceledAt
+        archivedAt
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+TEAM_PROJECT_ISSUES_QUERY = """
+query TeamProjectIssues($teamId: String!, $after: String) {
+  team(id: $teamId) {
+    issues(
+      first: 100
+      after: $after
+      filter: { project: { null: false } }
+    ) {
+      nodes {
+        id
+        identifier
+        title
+        estimate
+        createdAt
+        completedAt
+        canceledAt
+        archivedAt
+        state { name type }
+        assignee { id name displayName }
+        project { id name archivedAt }
+        parent { id }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
 TEAM_MEMBERS_QUERY = """
 query TeamMembers($teamId: String!, $after: String) {
   team(id: $teamId) {
@@ -199,4 +247,34 @@ class LinearClient:
             page = connection.get("pageInfo") or {}
             if not page.get("hasNextPage"):
                 return members
+            after = page.get("endCursor")
+
+    def team_projects(self, team_linear_id: str) -> list[dict[str, Any]]:
+        """Return the team's active (non-archived) Linear projects."""
+        projects: list[dict[str, Any]] = []
+        after: str | None = None
+        while True:
+            data = self._post(TEAM_PROJECTS_QUERY, {"teamId": team_linear_id, "after": after})
+            team = data.get("team") or {}
+            connection = team.get("projects") or {}
+            projects.extend(connection.get("nodes") or [])
+            page = connection.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                return projects
+            after = page.get("endCursor")
+
+    def team_project_issues(self, team_linear_id: str) -> list[dict[str, Any]]:
+        """Return the team's issues that belong to a Linear project."""
+        issues: list[dict[str, Any]] = []
+        after: str | None = None
+        while True:
+            data = self._post(
+                TEAM_PROJECT_ISSUES_QUERY, {"teamId": team_linear_id, "after": after}
+            )
+            team = data.get("team") or {}
+            connection = team.get("issues") or {}
+            issues.extend(connection.get("nodes") or [])
+            page = connection.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                return issues
             after = page.get("endCursor")

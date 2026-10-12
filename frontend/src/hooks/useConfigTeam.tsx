@@ -20,7 +20,7 @@ interface ConfigTeamContextValue {
 const ConfigTeamContext = createContext<ConfigTeamContextValue | null>(null)
 
 /**
- * Shares one selected team across the per-team Configuration sections
+ * Shares one selected team across the per-team Settings sections
  * (Cycle Configuration, Groups, Team Configuration) so switching sections keeps
  * the same team.
  */

@@ -8,6 +8,8 @@ import type {
   GroupOut,
   IssueOut,
   LinearConfigOut,
+  ProjectOut,
+  ProjectRefreshResult,
   RefreshResult,
   TeamCostOut,
   TeamOut,
@@ -102,6 +104,12 @@ export const api = {
     ),
   finalizeCycle: (teamId: number) =>
     request<CycleSettingsOut>(`/teams/${teamId}/cycle/finalize`, {
+      method: 'POST',
+    }),
+
+  listProjects: (teamId: number) => request<ProjectOut[]>(`/teams/${teamId}/projects`),
+  refreshProjects: (teamId: number) =>
+    request<ProjectRefreshResult>(`/teams/${teamId}/projects/refresh`, {
       method: 'POST',
     }),
 

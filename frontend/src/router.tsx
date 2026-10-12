@@ -14,6 +14,7 @@ import { TeamConfigurationPanel } from './components/TeamConfigurationPanel'
 import { TimeConfigurationPanel } from './components/TimeConfigurationPanel'
 import { ConfigLayout } from './pages/ConfigLayout'
 import { DashboardPage } from './pages/DashboardPage'
+import { ProjectsPage } from './pages/ProjectsPage'
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -27,6 +28,12 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: DashboardPage,
+})
+
+const projectsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/projects',
+  component: ProjectsPage,
 })
 
 const configRoute = createRoute({
@@ -81,6 +88,7 @@ const dataRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  projectsRoute,
   configRoute.addChildren([
     configIndexRoute,
     linearRoute,

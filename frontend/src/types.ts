@@ -190,4 +190,46 @@ export interface DataImportOut {
   cycles: number
   issues: number
   members: number
+  projects: number
+}
+
+export interface ProjectIssueOut {
+  id: number
+  identifier: string
+  title: string
+  state_name: string | null
+  state_type: string | null
+  estimate: number | null
+  assignee_name: string | null
+  created_at: string | null
+  completed_at: string | null
+}
+
+export interface ProjectOut {
+  id: number
+  linear_id: string
+  name: string
+  state: string | null
+  start_date: string | null
+  target_date: string | null
+  completed_at: string | null
+  canceled_at: string | null
+  archived_at: string | null
+  last_synced_at: string | null
+  issue_count: number
+  points: number
+  done_points: number
+  unestimated_issues: number
+  cost: number
+  currency: string
+  man_day_cost: number
+  issues: ProjectIssueOut[]
+}
+
+export interface ProjectRefreshResult {
+  team_id: number
+  status: string
+  projects_synced: number
+  issues_synced: number
+  message: string | null
 }

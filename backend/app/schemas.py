@@ -257,9 +257,51 @@ class CycleSettingsIn(BaseModel):
     members: list[CycleMemberAvailabilityIn] = []
 
 
+class ProjectIssueOut(BaseModel):
+    id: int
+    identifier: str
+    title: str
+    state_name: str | None = None
+    state_type: str | None = None
+    estimate: float | None = None
+    assignee_name: str | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class ProjectOut(BaseModel):
+    id: int
+    linear_id: str
+    name: str
+    state: str | None = None
+    start_date: str | None = None
+    target_date: str | None = None
+    completed_at: datetime | None = None
+    canceled_at: datetime | None = None
+    archived_at: datetime | None = None
+    last_synced_at: datetime | None = None
+    issue_count: int
+    points: float
+    done_points: float
+    unestimated_issues: int
+    cost: float
+    currency: CurrencySymbol = "$"
+    man_day_cost: int = 0
+    issues: list[ProjectIssueOut] = []
+
+
+class ProjectRefreshResult(BaseModel):
+    team_id: int
+    status: str
+    projects_synced: int
+    issues_synced: int
+    message: str | None = None
+
+
 class DataImportOut(BaseModel):
     ok: bool = True
     teams: int
     cycles: int
     issues: int
     members: int
+    projects: int = 0

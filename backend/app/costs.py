@@ -1,8 +1,8 @@
 """Per-team cost preferences: currency symbol and man-day cost.
 
 Values are stored in a :class:`~app.models.TeamCost` row (one per team) so they
-can be edited from the Configuration page and used to value work on the
-Dashboard. When no row exists yet the defaults below are used.
+can be edited from the Settings page and used to value work on
+Cycles and Projects. When no row exists yet the defaults below are used.
 """
 
 from __future__ import annotations

@@ -28,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base, IntegerPK, UTCDateTime
 
 # Incremented when a one-shot data migration is required. See ``init_db``.
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 def utcnow() -> datetime:
@@ -38,6 +38,7 @@ def utcnow() -> datetime:
 class SyncKind(StrEnum):
     TEAMS = "teams"
     ISSUES = "issues"
+    PROJECTS = "projects"
 
 
 class SyncStatus(StrEnum):
@@ -120,6 +121,9 @@ class Team(Base):
         back_populates="team",
         foreign_keys="Cycle.team_id",
         cascade="all, delete-orphan",
+    )
+    projects: Mapped[list[Project]] = relationship(
+        back_populates="team", cascade="all, delete-orphan"
     )
 
 
@@ -242,6 +246,88 @@ class Cycle(Base):
     @classmethod
     def _is_finalized_expression(cls):
         return cls.archived_at.is_not(None)
+
+
+class Project(Base):
+    """A Linear project associated with a team.
+
+    Synced independently of cycles so cost can include work that spans
+    (or never sat in) a stored cycle snapshot. Archived Linear projects
+    are not kept.
+    """
+
+    __tablename__ = "projects"
+    __table_args__ = (
+        UniqueConstraint("team_id", "linear_id", name="uq_projects_team_linear"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    linear_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    start_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, default=utcnow, onupdate=utcnow
+    )
+
+    team: Mapped[Team] = relationship(back_populates="projects")
+    issues: Mapped[list[ProjectIssue]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+
+
+class ProjectIssue(Base):
+    """A team's issue as it currently exists on a Linear project.
+
+    Separate from cycle ``issues`` so project refresh never rewrites cycle
+    history. Unique per project, not per cycle.
+    """
+
+    __tablename__ = "project_issues"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "linear_id", name="uq_project_issues_project_linear"
+        ),
+        Index("ix_project_issues_team_id_project_id", "team_id", "project_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    linear_id: Mapped[str] = mapped_column(String(64), index=True)
+    identifier: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(Text)
+    state_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    state_type: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    estimate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    assignee_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+    project: Mapped[Project] = relationship(back_populates="issues")
+
+    @property
+    def is_completed(self) -> bool:
+        return self.state_type == "completed"
+
+    @property
+    def is_canceled(self) -> bool:
+        return self.state_type == "canceled" or self.canceled_at is not None
 
 
 class TeamCost(Base):

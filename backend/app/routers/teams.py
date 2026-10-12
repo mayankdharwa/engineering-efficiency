@@ -17,6 +17,8 @@ from ..models import (
     CycleMembership,
     Issue,
     MemberGroup,
+    Project,
+    ProjectIssue,
     SyncKind,
     SyncRun,
     SyncStatus,
@@ -125,6 +127,8 @@ def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
     # have SQLite foreign keys enabled. With PRAGMA foreign_keys=ON the same
     # deletes also happen via ON DELETE CASCADE / SET NULL.
     db.execute(delete(Issue).where(Issue.team_id == team_id))
+    db.execute(delete(ProjectIssue).where(ProjectIssue.team_id == team_id))
+    db.execute(delete(Project).where(Project.team_id == team_id))
     db.execute(delete(CycleMembership).where(CycleMembership.team_id == team_id))
     db.execute(delete(Cycle).where(Cycle.team_id == team_id))
     db.execute(delete(TeamMember).where(TeamMember.team_id == team_id))

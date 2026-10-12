@@ -17,6 +17,8 @@ from .models import (
     CycleMembership,
     Issue,
     LinearConfig,
+    Project,
+    ProjectIssue,
     SyncKind,
     SyncRun,
     SyncStatus,
@@ -38,6 +40,14 @@ class SyncSummary:
     cycle_number: int | None = None
     cycle_starts_at: datetime | None = None
     cycle_ends_at: datetime | None = None
+
+
+@dataclass
+class ProjectSyncSummary:
+    """Outcome of a single team project refresh."""
+
+    projects_synced: int
+    issues_synced: int
 
 
 class CycleMismatchError(RuntimeError):
@@ -393,6 +403,114 @@ def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSumma
         cycle_starts_at=parse_dt((cycle or {}).get("startsAt")),
         cycle_ends_at=parse_dt((cycle or {}).get("endsAt")),
     )
+
+
+def _apply_project_fields(row: Project, remote: dict[str, Any], *, synced_at: datetime) -> None:
+    row.name = remote.get("name") or "Untitled project"
+    row.state = remote.get("state")
+    row.start_date = remote.get("startDate")
+    row.target_date = remote.get("targetDate")
+    row.completed_at = parse_dt(remote.get("completedAt"))
+    row.canceled_at = parse_dt(remote.get("canceledAt"))
+    row.archived_at = parse_dt(remote.get("archivedAt"))
+    row.last_synced_at = synced_at
+
+
+def _is_archived(remote: dict[str, Any]) -> bool:
+    return bool(remote.get("archivedAt"))
+
+
+def _ensure_project(
+    db: Session,
+    team: Team,
+    existing: dict[str, Project],
+    linear_id: str,
+) -> Project:
+    row = existing.get(linear_id)
+    if row is None:
+        row = Project(team_id=team.id, linear_id=linear_id)
+        db.add(row)
+        existing[linear_id] = row
+    return row
+
+
+def _build_project_issue(team: Team, project: Project, remote: dict[str, Any]) -> ProjectIssue:
+    state = remote.get("state") or {}
+    assignee = remote.get("assignee") or {}
+    return ProjectIssue(
+        team_id=team.id,
+        project_id=project.id,
+        linear_id=remote["id"],
+        identifier=remote.get("identifier") or "",
+        title=remote.get("title") or "",
+        state_name=state.get("name"),
+        state_type=state.get("type"),
+        estimate=remote.get("estimate"),
+        assignee_name=assignee.get("displayName") or assignee.get("name"),
+        created_at=parse_dt(remote.get("createdAt")),
+        completed_at=parse_dt(remote.get("completedAt")),
+        canceled_at=parse_dt(remote.get("canceledAt")),
+        archived_at=parse_dt(remote.get("archivedAt")),
+    )
+
+
+def sync_team_projects(db: Session, client: LinearClient, team: Team) -> ProjectSyncSummary:
+    """Download the team's Linear projects and their issues.
+
+    Cycle ``issues`` rows are left alone. Project issues replace the previous
+    project snapshot for this team so cost always reflects Linear's current
+    project membership, including work that spans cycles.
+    """
+    remote_projects = client.team_projects(team.linear_id)
+    remote_issues = client.team_project_issues(team.linear_id)
+    issues = [remote for remote in remote_issues if not remote.get("parent")]
+
+    now = utcnow()
+    existing = {
+        row.linear_id: row
+        for row in db.scalars(select(Project).where(Project.team_id == team.id)).all()
+    }
+    seen_ids: set[str] = set()
+
+    for remote in remote_projects:
+        if _is_archived(remote):
+            continue
+        linear_id = remote["id"]
+        seen_ids.add(linear_id)
+        row = _ensure_project(db, team, existing, linear_id)
+        _apply_project_fields(row, remote, synced_at=now)
+
+    for remote in issues:
+        project = remote.get("project") or {}
+        linear_id = project.get("id")
+        if not linear_id or linear_id in seen_ids or _is_archived(project):
+            continue
+        seen_ids.add(linear_id)
+        row = _ensure_project(db, team, existing, linear_id)
+        row.name = project.get("name") or row.name or "Untitled project"
+        row.last_synced_at = now
+
+    db.flush()
+
+    db.execute(delete(ProjectIssue).where(ProjectIssue.team_id == team.id))
+    stored = 0
+    for remote in issues:
+        project_payload = remote.get("project") or {}
+        project_linear_id = project_payload.get("id")
+        if not project_linear_id or _is_archived(project_payload):
+            continue
+        project_row = existing.get(project_linear_id)
+        if project_row is None:
+            continue
+        db.add(_build_project_issue(team, project_row, remote))
+        stored += 1
+
+    for linear_id, row in list(existing.items()):
+        if linear_id not in seen_ids:
+            db.delete(row)
+
+    db.commit()
+    return ProjectSyncSummary(projects_synced=len(seen_ids), issues_synced=stored)
 
 
 def record_sync_run(

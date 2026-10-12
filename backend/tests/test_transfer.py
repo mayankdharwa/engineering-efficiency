@@ -19,6 +19,8 @@ from app.models import (
     Issue,
     LinearConfig,
     MemberGroup,
+    Project,
+    ProjectIssue,
     Team,
     TeamCost,
     TeamMember,
@@ -111,6 +113,20 @@ def _seed(session_factory) -> None:
                 raw={"id": "i1", "title": "Ship export", "apiKey": SECRET_KEY},
             )
         )
+        project = Project(id=1, team_id=team.id, linear_id="p1", name="Platform")
+        db.add(project)
+        db.flush()
+        db.add(
+            ProjectIssue(
+                id=1,
+                team_id=team.id,
+                project_id=project.id,
+                linear_id="i1",
+                identifier="ENG-1",
+                title="Ship export",
+                estimate=4.0,
+            )
+        )
         db.commit()
 
 
@@ -160,6 +176,7 @@ def test_import_replaces_shareable_data_and_keeps_local_key() -> None:
         "cycles": 1,
         "issues": 1,
         "members": 1,
+        "projects": 1,
     }
 
     with sessions() as db:
@@ -184,6 +201,12 @@ def test_import_replaces_shareable_data_and_keeps_local_key() -> None:
         settings = db.get(AppSettings, 1)
         assert settings is not None
         assert settings.timezone == "Asia/Kolkata"
+        project = db.get(Project, 1)
+        assert project is not None
+        assert project.name == "Platform"
+        project_issue = db.get(ProjectIssue, 1)
+        assert project_issue is not None
+        assert project_issue.estimate == 4.0
 
 
 def test_import_round_trip_preserves_shareable_tables() -> None:

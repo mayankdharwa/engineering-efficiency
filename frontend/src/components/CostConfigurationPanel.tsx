@@ -80,7 +80,7 @@ export function CostConfigurationPanel() {
         <CardTitle>Cost Configuration</CardTitle>
         <CardDescription>
           The currency and cost of a single man-day for this team. These are used to value
-          capacity and work on the Dashboard.
+          capacity and work on Cycles.
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-4">

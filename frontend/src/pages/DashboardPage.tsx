@@ -99,7 +99,7 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             <Link to="/config" className={buttonVariants()}>
-              Go to configuration
+              Go to Settings
             </Link>
           </CardContent>
         </Card>
@@ -181,7 +181,7 @@ export function DashboardPage() {
                           costs.manDayCost,
                           costs.currency,
                         )}/day`
-                      : 'Set a man-day cost in Configuration'
+                      : 'Set a man-day cost in Settings'
                   }
                 />
                 <StatCard
@@ -192,7 +192,7 @@ export function DashboardPage() {
                       ? `${formatPoints(costs.unutilizedPoints)} of ${formatPoints(
                           summary.capacity,
                         )} pts unallocated`
-                      : 'Set a man-day cost in Configuration'
+                      : 'Set a man-day cost in Settings'
                   }
                 />
               </div>
@@ -209,7 +209,7 @@ export function DashboardPage() {
                   <CardTitle>Group breakdown</CardTitle>
                   <CardDescription>
                     Team totals grouped by member group for the selected cycle. Add and assign
-                    groups in Configuration.
+                    groups in Settings.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

@@ -2,7 +2,7 @@ import { Label } from '@/components/ui/label'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { TeamPicker } from './TeamPicker'
 
-/** Shared team picker used by the per-team Configuration sections. */
+/** Shared team picker used by the per-team Settings sections. */
 export function TeamSelect() {
   const { teams, teamId, setTeamId } = useConfigTeam()
 
