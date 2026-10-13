@@ -50,16 +50,14 @@ export function DataTransferPanel() {
   const exportMutation = useMutation({
     mutationFn: api.downloadExport,
     onSuccess: () =>
-      notifySuccess('Export downloaded. The Linear API key was not included.'),
+      notifySuccess('Export downloaded.'),
     onError: (error: Error) => notifyError(error.message),
   })
 
   const importMutation = useMutation({
     mutationFn: (selected: File) => api.importData(selected),
     onSuccess: (result) => {
-      notifySuccess(
-        `Imported ${formatCounts(result)}. Your Linear API key was left unchanged.`,
-      )
+      notifySuccess(`Imported ${formatCounts(result)}.`)
       setFile(null)
       setFileInputKey((key) => key + 1)
       void queryClient.invalidateQueries()
