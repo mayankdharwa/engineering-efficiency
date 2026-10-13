@@ -28,6 +28,7 @@ import {
 } from '../lib/projectState'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import { pickDefaultTeamId } from '../lib/selection'
+import type { ProjectOut } from '../types'
 
 function StatCard({
   label,
@@ -70,9 +71,17 @@ export function ProjectsPage() {
     enabled: selectedTeamId !== null,
   })
   const projects = projectsQuery.data ?? []
+  const includedProjects = useMemo(
+    () => projects.filter((project) => !project.excluded),
+    [projects],
+  )
   const visibleProjects = useMemo(
     () => filterProjectsByState(projects, selectedStates),
     [projects, selectedStates],
+  )
+  const chartProjects = useMemo(
+    () => visibleProjects.filter((project) => !project.excluded),
+    [visibleProjects],
   )
   const selectedProject =
     visibleProjects.find((project) => project.id === selectedProjectId) ?? null
@@ -82,6 +91,20 @@ export function ProjectsPage() {
     onSuccess: (result, teamId) => {
       notifySuccess(result.message ?? `Synced ${result.projects_synced} project(s).`)
       invalidateTeamData(queryClient, teamId)
+    },
+    onError: (error: Error) => notifyError(error.message),
+  })
+  const excludeMutation = useMutation({
+    mutationFn: ({
+      teamId,
+      project,
+    }: {
+      teamId: number
+      project: ProjectOut
+    }) => api.updateProject(teamId, project.id, { excluded: !project.excluded }),
+    onSuccess: (updated, { teamId }) => {
+      notifySuccess(updated.excluded ? 'Project excluded.' : 'Project included.')
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects(teamId) })
     },
     onError: (error: Error) => notifyError(error.message),
   })
@@ -96,7 +119,7 @@ export function ProjectsPage() {
   }, [selectedTeamId])
 
   const totals = useMemo(() => {
-    return projects.reduce(
+    return includedProjects.reduce(
       (acc, project) => ({
         points: acc.points + project.points,
         cost: acc.cost + project.cost,
@@ -104,10 +127,11 @@ export function ProjectsPage() {
       }),
       { points: 0, cost: 0, issues: 0 },
     )
-  }, [projects])
+  }, [includedProjects])
+  const excludedCount = projects.length - includedProjects.length
 
-  const currency = projects[0]?.currency ?? '$'
-  const manDayCost = projects[0]?.man_day_cost ?? 0
+  const currency = includedProjects[0]?.currency ?? projects[0]?.currency ?? '$'
+  const manDayCost = includedProjects[0]?.man_day_cost ?? projects[0]?.man_day_cost ?? 0
   const lastSynced = projects.reduce<string | null>((latest, project) => {
     if (!project.last_synced_at) return latest
     if (!latest || project.last_synced_at > latest) return project.last_synced_at
@@ -181,13 +205,17 @@ export function ProjectsPage() {
               <div className="grid gap-4 sm:grid-cols-3">
                 <StatCard
                   label="Projects"
-                  value={projects.length}
-                  hint={`${totals.issues} issue(s) across all projects`}
+                  value={includedProjects.length}
+                  hint={
+                    excludedCount > 0
+                      ? `${totals.issues} issue(s) · ${excludedCount} excluded`
+                      : `${totals.issues} issue(s) across all projects`
+                  }
                 />
                 <StatCard
                   label="Points"
                   value={formatPoints(totals.points)}
-                  hint="Canceled issues are excluded"
+                  hint="Canceled issues and excluded projects are omitted"
                 />
                 <StatCard
                   label="Total cost"
@@ -213,7 +241,7 @@ export function ProjectsPage() {
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <ProjectCostChart projects={visibleProjects} />
+                  <ProjectCostChart projects={chartProjects} />
                   <ProjectsTable
                     projects={visibleProjects}
                     selectedProjectId={selectedProjectId}
@@ -221,6 +249,10 @@ export function ProjectsPage() {
                       setSelectedProjectId((current) =>
                         current === project.id ? null : project.id,
                       )
+                    }
+                    onToggleExcluded={(project) =>
+                      selectedTeamId !== null &&
+                      excludeMutation.mutate({ teamId: selectedTeamId, project })
                     }
                     emptyMessage={
                       visibleProjects.length === 0

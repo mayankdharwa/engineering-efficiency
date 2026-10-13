@@ -41,7 +41,7 @@ function columnClassName(
   return (
     cn(
       centered && 'text-center whitespace-normal',
-      centerExcept && !centered && 'w-[22%]',
+      centerExcept && !centered && !extra && 'w-[22%]',
       extra,
     ) || undefined
   )

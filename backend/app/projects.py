@@ -4,8 +4,9 @@ A point is half a man-day (``POINTS_PER_DAY`` = 2), matching cycle metrics:
 
 ``cost = points * man_day_cost / POINTS_PER_DAY``
 
-Canceled issues are stored but excluded from points and cost. Empty projects
-still appear with zero totals.
+Canceled issues are stored but omitted from points and cost. Projects marked
+excluded locally still return their own totals so they can be reviewed, but
+team-level calculations skip them. Empty projects still appear with zero totals.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ class ProjectCostView:
     canceled_at: datetime | None
     archived_at: datetime | None
     last_synced_at: datetime | None
+    excluded: bool
     issue_count: int
     points: float
     done_points: float
@@ -114,6 +116,7 @@ def compute_team_project_costs(db: Session, team: Team) -> list[ProjectCostView]
                 canceled_at=project.canceled_at,
                 archived_at=project.archived_at,
                 last_synced_at=project.last_synced_at,
+                excluded=bool(project.excluded),
                 issue_count=len(issues),
                 points=points,
                 done_points=done_points,

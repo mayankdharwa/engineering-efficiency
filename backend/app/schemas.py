@@ -280,6 +280,7 @@ class ProjectOut(BaseModel):
     canceled_at: datetime | None = None
     archived_at: datetime | None = None
     last_synced_at: datetime | None = None
+    excluded: bool = False
     issue_count: int
     points: float
     done_points: float
@@ -288,6 +289,10 @@ class ProjectOut(BaseModel):
     currency: CurrencySymbol = "$"
     man_day_cost: int = 0
     issues: list[ProjectIssueOut] = []
+
+
+class ProjectUpdateIn(BaseModel):
+    excluded: bool
 
 
 class ProjectRefreshResult(BaseModel):

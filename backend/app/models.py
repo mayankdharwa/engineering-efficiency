@@ -274,6 +274,8 @@ class Project(Base):
     canceled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    # Local exclusion flag; Linear refresh never overwrites this.
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime, default=utcnow, onupdate=utcnow

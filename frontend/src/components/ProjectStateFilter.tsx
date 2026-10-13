@@ -7,13 +7,14 @@ import {
 } from '@/components/ui/select'
 import {
   ALL_PROJECT_STATES_KEY,
+  EXCLUDED_PROJECT_STATE,
   PROJECT_STATES,
   UNKNOWN_PROJECT_STATE,
   formatProjectState,
   isAllProjectStates,
 } from '../lib/projectState'
 
-const STATE_OPTIONS = [...PROJECT_STATES, UNKNOWN_PROJECT_STATE] as const
+const STATE_OPTIONS = [...PROJECT_STATES, EXCLUDED_PROJECT_STATE, UNKNOWN_PROJECT_STATE] as const
 
 interface ProjectStateFilterProps {
   selected: Set<string>

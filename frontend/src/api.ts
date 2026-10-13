@@ -108,6 +108,11 @@ export const api = {
     }),
 
   listProjects: (teamId: number) => request<ProjectOut[]>(`/teams/${teamId}/projects`),
+  updateProject: (teamId: number, projectId: number, payload: { excluded: boolean }) =>
+    request<ProjectOut>(`/teams/${teamId}/projects/${projectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
   refreshProjects: (teamId: number) =>
     request<ProjectRefreshResult>(`/teams/${teamId}/projects/refresh`, {
       method: 'POST',

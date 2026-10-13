@@ -296,6 +296,15 @@ def test_cost_uses_half_man_day_and_excludes_canceled() -> None:
                     estimate=None,
                     state_type="unstarted",
                 ),
+                ProjectIssue(
+                    team_id=team.id,
+                    project_id=project.id,
+                    linear_id="i5",
+                    identifier="ENG-5",
+                    title="Zero points",
+                    estimate=0.0,
+                    state_type="unstarted",
+                ),
             ]
         )
         db.commit()
@@ -306,7 +315,7 @@ def test_cost_uses_half_man_day_and_excludes_canceled() -> None:
         assert alpha.points == 6.0
         assert alpha.done_points == 2.0
         assert alpha.unestimated_issues == 1
-        assert alpha.issue_count == 4
+        assert alpha.issue_count == 5
         assert alpha.cost == 3000.0
         assert alpha.currency == "€"
         assert by_name["Empty"].points == 0.0
@@ -429,3 +438,63 @@ def test_projects_endpoint_returns_cost_totals() -> None:
     assert body[0]["points"] == 3.0
     assert body[0]["cost"] == 300.0
     assert body[0]["issues"][0]["identifier"] == "ENG-1"
+    assert body[0]["excluded"] is False
+
+
+def test_sync_preserves_excluded_flag() -> None:
+    with _session() as db:
+        team = _add_team(db)
+        db.add(
+            Project(
+                team_id=team.id,
+                linear_id="p1",
+                name="Alpha",
+                state="started",
+                excluded=True,
+            )
+        )
+        db.commit()
+
+        client = _FakeProjectClient(
+            [{"id": "p1", "name": "Alpha", "state": "completed"}],
+            [],
+        )
+        sync_team_projects(db, client, team)
+        stored = db.scalar(select(Project).where(Project.linear_id == "p1"))
+        assert stored is not None
+        assert stored.excluded is True
+        assert stored.state == "completed"
+
+
+def test_update_project_excluded() -> None:
+    client, sessions = _api_client()
+    with sessions() as db:
+        team = _add_team(db)
+        project = Project(team_id=team.id, linear_id="p1", name="Alpha", state="started")
+        db.add(project)
+        db.commit()
+        team_id, project_id = team.id, project.id
+
+    excluded = client.patch(
+        f"/api/teams/{team_id}/projects/{project_id}",
+        json={"excluded": True},
+    )
+    assert excluded.status_code == 200
+    assert excluded.json()["excluded"] is True
+    assert excluded.json()["state"] == "started"
+
+    listed = client.get(f"/api/teams/{team_id}/projects")
+    assert listed.json()[0]["excluded"] is True
+
+    included = client.patch(
+        f"/api/teams/{team_id}/projects/{project_id}",
+        json={"excluded": False},
+    )
+    assert included.status_code == 200
+    assert included.json()["excluded"] is False
+
+    missing = client.patch(
+        f"/api/teams/{team_id}/projects/999",
+        json={"excluded": True},
+    )
+    assert missing.status_code == 404

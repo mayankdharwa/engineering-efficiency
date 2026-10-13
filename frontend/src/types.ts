@@ -216,6 +216,7 @@ export interface ProjectOut {
   canceled_at: string | null
   archived_at: string | null
   last_synced_at: string | null
+  excluded: boolean
   issue_count: number
   points: number
   done_points: number

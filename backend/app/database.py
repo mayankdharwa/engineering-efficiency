@@ -122,6 +122,7 @@ def init_db() -> None:
     _migrate_to_cycle_hub()
     _add_missing_sqlite_columns()
     _add_member_group_color_column()
+    _add_project_excluded_column()
     _migrate_member_roles_to_groups()
     _migrate_to_cycle_memberships()
     _set_schema_version(engine, CURRENT_SCHEMA_VERSION)
@@ -607,6 +608,28 @@ def _add_member_group_color_column() -> None:
             text(
                 "ALTER TABLE member_groups "
                 "ADD COLUMN color VARCHAR(7) NOT NULL DEFAULT '#d97706'"
+            )
+        )
+
+
+def _add_project_excluded_column() -> None:
+    """Add ``projects.excluded`` to databases created before local exclude/include."""
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    if "projects" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("projects")}
+    if "excluded" in columns:
+        return
+    with engine.begin() as connection:
+        if "hidden" in columns:
+            connection.execute(text("ALTER TABLE projects RENAME COLUMN hidden TO excluded"))
+            return
+        connection.execute(
+            text(
+                "ALTER TABLE projects "
+                "ADD COLUMN excluded BOOLEAN NOT NULL DEFAULT 0"
             )
         )
 
