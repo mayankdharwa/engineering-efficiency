@@ -1,4 +1,5 @@
 import type {
+  AdhocByDayPointOut,
   GroupOut,
   MemberMetricsOut,
   TeamStatsOut,
@@ -9,7 +10,7 @@ import {
   fullCapacityPoints,
   pointsToManDays,
 } from './capacity'
-import { combineGroups, filterMembers, isAllGroups } from './groups'
+import { combineGroups, filterAdhocByDay, filterMembers, isAllGroups } from './groups'
 
 /** Headline totals shown on the dashboard cards (team or selected groups). */
 export interface DashboardHeadline {
@@ -36,6 +37,8 @@ export interface DashboardView {
   summary: DashboardHeadline
   velocityTrend: VelocityTrendPointOut[]
   chartMembers: MemberMetricsOut[]
+  adhocDates: string[]
+  adhocByDay: AdhocByDayPointOut[]
   groupOptions: GroupOut[]
   costs: DashboardCosts
   pointsPerDay: number
@@ -105,6 +108,8 @@ export function buildDashboardView(
     summary,
     velocityTrend: groupSummary ? groupSummary.trend : (stats?.velocity_trend ?? []),
     chartMembers: filterMembers(stats?.members ?? [], selectedGroups),
+    adhocDates: stats?.adhoc_dates ?? [],
+    adhocByDay: filterAdhocByDay(stats?.adhoc_by_day ?? [], selectedGroups),
     groupOptions: (stats?.groups ?? [])
       .filter((group) => group.group_id !== null)
       .map((group) => ({

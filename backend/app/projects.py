@@ -3,23 +3,35 @@
 A point is half a man-day (``POINTS_PER_DAY`` = 2), matching cycle metrics:
 
 ``cost = points * man_day_cost / POINTS_PER_DAY``
+``incurred_cost = done_points * man_day_cost / POINTS_PER_DAY``
 
 Canceled issues are stored but omitted from points and cost. Projects marked
 excluded locally still return their own totals so they can be reviewed, but
 team-level calculations skip them. Empty projects still appear with zero totals.
+
+Schedule health compares remaining points to leftover Mon–Fri days before the
+target date, at ``POINTS_PER_DAY``. Remaining days use the app timezone and
+end-of-day cutoff. A one-day buffer keeps the project On Track.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .app_settings import get_app_settings
 from .costs import get_team_cost
-from .metrics import POINTS_PER_DAY
-from .models import Project, ProjectIssue, Team
+from .metrics import POINTS_PER_DAY, remaining_weekdays
+from .models import Project, ProjectIssue, Team, utcnow
+
+HEALTH_ON_TRACK = "on_track"
+HEALTH_LAGGING = "lagging"
+HEALTH_AHEAD = "ahead"
+HEALTH_BUFFER_DAYS = 1.0
 
 
 @dataclass
@@ -52,10 +64,74 @@ class ProjectCostView:
     points: float
     done_points: float
     unestimated_issues: int
+    incurred_cost: float
     cost: float
     currency: str
     man_day_cost: int
+    health: str | None
+    expected_done_points: float | None
+    working_days_left: float | None
     issues: list[ProjectIssueView] = field(default_factory=list)
+
+
+def parse_project_date(value: str | None) -> date | None:
+    """Parse a Linear project date (``YYYY-MM-DD``) into a calendar date."""
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def classify_project_health(
+    remaining_points: float,
+    remaining_days: float,
+    *,
+    points_per_day: float = POINTS_PER_DAY,
+    buffer_days: float = HEALTH_BUFFER_DAYS,
+) -> str:
+    """Compare remaining work to remaining weekdays, with a one-day buffer."""
+    days_needed = remaining_points / points_per_day if points_per_day > 0 else float("inf")
+    slack = remaining_days - days_needed
+    if slack > buffer_days:
+        return HEALTH_AHEAD
+    if slack < -buffer_days:
+        return HEALTH_LAGGING
+    return HEALTH_ON_TRACK
+
+
+def project_schedule_health(
+    *,
+    points: float,
+    done_points: float,
+    target_date: str | None,
+    now: datetime,
+    tz: ZoneInfo,
+    cutoff_hour: int,
+) -> tuple[str | None, float | None, float | None]:
+    """Return ``(health, expected_done_points, working_days_left)``.
+
+    Expected done points are ``total − remaining_weekdays × POINTS_PER_DAY``:
+    the points that should already be finished if the leftover weekdays are
+    spent at one person-day of velocity. Remaining weekdays follow the app
+    timezone and cutoff. Health is On Track when actual remaining work is
+    within one working day of that leftover capacity.
+    """
+    parsed_target = parse_project_date(target_date)
+    if parsed_target is None:
+        return None, None, None
+    remaining_days = remaining_weekdays(parsed_target, now, tz, cutoff_hour)
+    remaining_points = max(0.0, points - done_points)
+    expected_done = points - remaining_days * POINTS_PER_DAY
+    return (
+        classify_project_health(remaining_points, remaining_days),
+        expected_done,
+        remaining_days,
+    )
 
 
 def _issue_view(issue: ProjectIssue) -> ProjectIssueView:
@@ -72,9 +148,13 @@ def _issue_view(issue: ProjectIssue) -> ProjectIssueView:
     )
 
 
-def compute_team_project_costs(db: Session, team: Team) -> list[ProjectCostView]:
+def compute_team_project_costs(
+    db: Session, team: Team, *, now: datetime | None = None
+) -> list[ProjectCostView]:
     """Aggregate stored project issues into per-project point and cost totals."""
     cost = get_team_cost(db, team.id)
+    settings = get_app_settings(db)
+    now = now or utcnow()
     projects = list(
         db.scalars(
             select(Project)
@@ -104,6 +184,14 @@ def compute_team_project_costs(db: Session, team: Team) -> list[ProjectCostView]
                 done_points += estimate
             if issue.estimate is None:
                 unestimated += 1
+        health, expected_done_points, working_days_left = project_schedule_health(
+            points=points,
+            done_points=done_points,
+            target_date=project.target_date,
+            now=now,
+            tz=settings.zone,
+            cutoff_hour=settings.day_cutoff_hour,
+        )
         views.append(
             ProjectCostView(
                 id=project.id,
@@ -121,9 +209,13 @@ def compute_team_project_costs(db: Session, team: Team) -> list[ProjectCostView]
                 points=points,
                 done_points=done_points,
                 unestimated_issues=unestimated,
+                incurred_cost=done_points / POINTS_PER_DAY * cost.man_day_cost,
                 cost=points / POINTS_PER_DAY * cost.man_day_cost,
                 currency=cost.currency,
                 man_day_cost=cost.man_day_cost,
+                health=health,
+                expected_done_points=expected_done_points,
+                working_days_left=working_days_left,
                 issues=[_issue_view(issue) for issue in issues],
             )
         )

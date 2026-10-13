@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
@@ -10,14 +10,17 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.metrics import (
+    _adhoc_by_day,
     _is_adhoc,
     _progress_fraction,
     _velocity_trend,
     compute_team_metrics,
+    cycle_calendar_dates,
     elapsed_working_days,
+    remaining_weekdays,
     weekdays_between,
 )
-from app.models import AppSettings, Cycle, Issue, Team
+from app.models import AppSettings, Cycle, CycleMembership, Issue, Team, TeamMember
 
 UTC_ZONE = ZoneInfo("UTC")
 KOLKATA = ZoneInfo("Asia/Kolkata")
@@ -64,6 +67,39 @@ def test_elapsed_working_days_negative_offset_timezone() -> None:
     now = datetime(2026, 10, 8, 20, 0, tzinfo=UTC)  # 13:00 in L.A., before cutoff
     assert elapsed_working_days(start, now, UTC_ZONE, CUTOFF) == 4.0
     assert elapsed_working_days(start, now, LOS_ANGELES, CUTOFF) == 3.0
+
+
+def test_remaining_weekdays_includes_today_before_cutoff() -> None:
+    now = datetime(2026, 10, 14, 11, 30, tzinfo=UTC)  # Wednesday
+    assert remaining_weekdays(date(2026, 10, 16), now, UTC_ZONE, CUTOFF) == 3.0
+
+
+def test_remaining_weekdays_excludes_today_after_cutoff() -> None:
+    now = datetime(2026, 10, 14, 19, 30, tzinfo=UTC)  # Wednesday after cutoff
+    assert remaining_weekdays(date(2026, 10, 16), now, UTC_ZONE, CUTOFF) == 2.0
+
+
+def test_remaining_weekdays_skips_weekends() -> None:
+    now = datetime(2026, 10, 16, 11, 0, tzinfo=UTC)  # Friday before cutoff
+    assert remaining_weekdays(date(2026, 10, 19), now, UTC_ZONE, CUTOFF) == 2.0  # Fri + Mon
+
+
+def test_remaining_weekdays_zero_when_target_has_passed() -> None:
+    now = datetime(2026, 10, 16, 20, 0, tzinfo=UTC)  # Friday after cutoff
+    assert remaining_weekdays(date(2026, 10, 16), now, UTC_ZONE, CUTOFF) == 0.0
+    assert remaining_weekdays(None, now, UTC_ZONE, CUTOFF) == 0.0
+
+
+def test_remaining_weekdays_follows_configured_timezone() -> None:
+    now = datetime(2026, 10, 14, 13, 30, tzinfo=UTC)  # 13:30 UTC == 19:00 IST
+    assert remaining_weekdays(date(2026, 10, 16), now, UTC_ZONE, CUTOFF) == 3.0
+    assert remaining_weekdays(date(2026, 10, 16), now, KOLKATA, CUTOFF) == 2.0
+
+
+def test_remaining_weekdays_negative_offset_timezone() -> None:
+    now = datetime(2026, 10, 16, 20, 0, tzinfo=UTC)  # Friday 13:00 in L.A.
+    assert remaining_weekdays(date(2026, 10, 16), now, UTC_ZONE, CUTOFF) == 0.0
+    assert remaining_weekdays(date(2026, 10, 16), now, LOS_ANGELES, CUTOFF) == 1.0
 
 
 def test_progress_fraction_is_zero_until_first_cutoff() -> None:
@@ -117,6 +153,64 @@ def test_velocity_trend_stops_at_last_elapsed_day() -> None:
     assert [point.date for point in trend] == ["2026-10-05", "2026-10-06", "2026-10-07"]
     assert trend[-1].progress == 0.3
     assert trend[-1].done_points == 4.0
+
+
+def test_cycle_calendar_dates_are_half_open_in_timezone() -> None:
+    start = datetime(2026, 10, 4, 18, 30, tzinfo=UTC)  # Monday 00:00 IST
+    end = datetime(2026, 10, 15, 18, 30, tzinfo=UTC)  # Thursday 00:00 IST
+    assert cycle_calendar_dates(start, end, UTC_ZONE)[0] == "2026-10-04"
+    assert cycle_calendar_dates(start, end, UTC_ZONE)[-1] == "2026-10-14"
+    ist = cycle_calendar_dates(start, end, KOLKATA)
+    assert ist[0] == "2026-10-05"
+    assert ist[-1] == "2026-10-15"
+    assert "2026-10-10" in ist  # weekend stays in the domain
+    assert cycle_calendar_dates(None, end, UTC_ZONE) == []
+    assert cycle_calendar_dates(start, None, KOLKATA) == ["2026-10-05"]
+
+
+def test_adhoc_by_day_groups_points_and_skips_planned() -> None:
+    start = datetime(2026, 10, 5, 0, 0, tzinfo=UTC)
+    planned = _issue(3.0, None)
+    planned.assignee_linear_id = "u1"
+    planned.assignee_name = "Ada"
+    planned.added_to_cycle_at = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
+
+    ada_first = _issue(2.0, None)
+    ada_first.assignee_linear_id = "u1"
+    ada_first.assignee_name = "Ada"
+    ada_first.added_to_cycle_at = datetime(2026, 10, 6, 9, 0, tzinfo=UTC)
+
+    ada_second = _issue(1.0, None)
+    ada_second.assignee_linear_id = "u1"
+    ada_second.assignee_name = "Ada"
+    ada_second.added_to_cycle_at = datetime(2026, 10, 6, 15, 0, tzinfo=UTC)
+
+    grace = _issue(4.0, None)
+    grace.assignee_linear_id = "u2"
+    grace.assignee_name = "Grace"
+    grace.added_to_cycle_at = datetime(2026, 10, 7, 10, 0, tzinfo=UTC)
+
+    unestimated = _issue(2.0, None)
+    unestimated.estimate = None
+    unestimated.assignee_linear_id = "u2"
+    unestimated.added_to_cycle_at = datetime(2026, 10, 7, 11, 0, tzinfo=UTC)
+
+    unassigned = _issue(2.0, None)
+    unassigned.assignee_linear_id = None
+    unassigned.added_to_cycle_at = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)
+
+    points = _adhoc_by_day(
+        [planned, ada_first, ada_second, grace, unestimated, unassigned],
+        start,
+        UTC_ZONE,
+        {"u1": "ada.l", "u2": "grace.h"},
+        {"u1": 1, "u2": 2},
+    )
+    assert [(row.date, row.assignee, row.points, row.group_id) for row in points] == [
+        ("2026-10-06", "ada.l", 3.0, 1),
+        ("2026-10-07", "grace.h", 4.0, 2),
+        ("2026-10-08", "Unassigned", 2.0, None),
+    ]
 
 
 def test_is_adhoc_uses_configured_timezone() -> None:
@@ -232,4 +326,79 @@ def test_compute_team_metrics_only_counts_active_cycle() -> None:
         historical = compute_team_metrics(db, team, cycle=old)
         assert historical.total_taken_points == 2.0
         assert historical.cycle_id == old.id
+
+
+def test_compute_team_metrics_adhoc_by_day(monkeypatch) -> None:
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
+        db.add(team)
+        db.flush()
+        start = datetime(2026, 10, 4, 18, 30, tzinfo=UTC)
+        end = datetime(2026, 10, 15, 18, 30, tzinfo=UTC)
+        cycle = Cycle(
+            team_id=team.id,
+            linear_id="c1",
+            starts_at=start,
+            ends_at=end,
+            working_days=10,
+        )
+        db.add(cycle)
+        db.flush()
+        team.current_cycle_id = cycle.id
+        ada = TeamMember(
+            team_id=team.id, linear_id="u1", name="Ada Lovelace", display_name="ada.l"
+        )
+        db.add(ada)
+        db.flush()
+        db.add(
+            CycleMembership(
+                team_id=team.id,
+                cycle_id=cycle.id,
+                member_id=ada.id,
+                member_linear_id="u1",
+            )
+        )
+        db.add(AppSettings(id=1, timezone="Asia/Kolkata", day_cutoff_hour=19))
+        db.add(
+            Issue(
+                linear_id="planned",
+                team_id=team.id,
+                identifier="ENG-1",
+                title="Planned",
+                estimate=3.0,
+                state_type="started",
+                cycle_id=cycle.id,
+                assignee_linear_id="u1",
+                assignee_name="Ada",
+                added_to_cycle_at=datetime(2026, 10, 5, 4, 0, tzinfo=UTC),
+            )
+        )
+        db.add(
+            Issue(
+                linear_id="adhoc",
+                team_id=team.id,
+                identifier="ENG-2",
+                title="Adhoc",
+                estimate=2.0,
+                state_type="started",
+                cycle_id=cycle.id,
+                assignee_linear_id="u1",
+                assignee_name="Ada",
+                added_to_cycle_at=datetime(2026, 10, 6, 4, 0, tzinfo=UTC),
+            )
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            "app.metrics.utcnow", lambda: datetime(2026, 10, 7, 13, 30, tzinfo=UTC)
+        )
+        metrics = compute_team_metrics(db, team)
+        assert metrics.adhoc_dates[0] == "2026-10-05"
+        assert metrics.adhoc_dates[-1] == "2026-10-15"
+        assert [
+            (row.date, row.assignee, row.points) for row in metrics.adhoc_by_day
+        ] == [("2026-10-06", "ada.l", 2.0)]
 

@@ -16,6 +16,9 @@ Definitions (confirmed with product):
 * ``done``   = sum of estimates for issues in a completed state.
 * ``adhoc``  = sum of estimates for issues attached to the cycle *after its
   first day* (``added_to_cycle_at`` on a later date than the cycle start).
+  ``adhoc_by_day`` breaks those points down by the local calendar date they
+  were attached and by assignee; ``adhoc_dates`` is every calendar day in the
+  cycle so the chart axis stays complete even when a day has no adhoc work.
 * ``planned`` = ``taken - adhoc``.
 
 Derived per member:
@@ -133,6 +136,25 @@ def elapsed_working_days(
     return _count_weekdays(first, last)
 
 
+def remaining_weekdays(
+    end: date | None,
+    now: datetime,
+    tz: ZoneInfo | None = None,
+    cutoff_hour: int = DEFAULT_DAY_CUTOFF_HOUR,
+) -> float:
+    """Count weekdays still available from now through ``end`` inclusive.
+
+    Uses the same working timezone and cutoff as :func:`elapsed_working_days`:
+    today stays available only before the cutoff hour, then remaining days
+    start tomorrow.
+    """
+    if end is None:
+        return 0.0
+    zone = tz or ZoneInfo("UTC")
+    first = _effective_date(_to_local(now, zone), cutoff_hour) + timedelta(days=1)
+    return _count_weekdays(first, end)
+
+
 def _progress_fraction(
     starts_at: datetime | None,
     working_days: float,
@@ -177,6 +199,17 @@ class VelocityTrendPoint:
     done_points: float
     expected_points: float
     velocity: float | None
+
+
+@dataclass
+class AdhocByDayPoint:
+    """Adhoc points attached on one calendar day, for one assignee."""
+
+    date: str
+    assignee: str
+    linear_id: str | None
+    group_id: int | None
+    points: float
 
 
 @dataclass
@@ -226,6 +259,8 @@ class TeamMetrics:
     members: list[MemberMetrics] = field(default_factory=list)
     groups: list[GroupMetrics] = field(default_factory=list)
     velocity_trend: list[VelocityTrendPoint] = field(default_factory=list)
+    adhoc_dates: list[str] = field(default_factory=list)
+    adhoc_by_day: list[AdhocByDayPoint] = field(default_factory=list)
 
 
 @dataclass
@@ -426,6 +461,10 @@ def compute_team_metrics(
         zone,
         cutoff_hour,
     )
+    name_by_id = {row.linear_id: row.name for row in rows if row.linear_id is not None}
+    group_by_id = {row.linear_id: row.group_id for row in rows if row.linear_id is not None}
+    adhoc_dates = cycle_calendar_dates(cycle.starts_at, cycle.ends_at, zone)
+    adhoc_by_day = _adhoc_by_day(issues, cycle.starts_at, zone, name_by_id, group_by_id)
 
     total_taken = sum(row.taken_points for row in rows)
     total_done = sum(row.done_points for row in rows)
@@ -458,7 +497,86 @@ def compute_team_metrics(
         members=rows,
         groups=group_rows,
         velocity_trend=velocity_trend,
+        adhoc_dates=adhoc_dates,
+        adhoc_by_day=adhoc_by_day,
     )
+
+
+def cycle_calendar_dates(
+    starts_at: datetime | None,
+    ends_at: datetime | None,
+    tz: ZoneInfo,
+) -> list[str]:
+    """Every calendar date in the half-open cycle interval ``[start, end)``.
+
+    Dates are resolved in the working timezone so they match adhoc bucketing.
+    """
+    if starts_at is None:
+        return []
+    first = _to_local(starts_at, tz).date()
+    if ends_at is None:
+        return [first.isoformat()]
+    last = _to_local(ends_at, tz).date()
+    if last <= first:
+        return [first.isoformat()]
+    dates: list[str] = []
+    cursor = first
+    while cursor < last:
+        dates.append(cursor.isoformat())
+        cursor += timedelta(days=1)
+    return dates
+
+
+def _adhoc_by_day(
+    issues: list[Issue],
+    starts_at: datetime | None,
+    tz: ZoneInfo,
+    name_by_id: dict[str, str],
+    group_by_id: dict[str, int | None],
+) -> list[AdhocByDayPoint]:
+    """Adhoc points attached on each calendar day, grouped by assignee.
+
+    Unestimated issues contribute 0 and are omitted. Planned work (attached on
+    the cycle's first day) is excluded.
+    """
+    buckets: dict[tuple[str, str | None], float] = {}
+    issue_name: dict[str | None, str] = {}
+    for issue in issues:
+        if not _is_adhoc(issue, starts_at, tz):
+            continue
+        added = issue.added_to_cycle_at
+        if added is None:
+            continue
+        points = issue.estimate or 0.0
+        if points <= 0:
+            continue
+        day = _to_local(added, tz).date().isoformat()
+        key = (day, issue.assignee_linear_id)
+        buckets[key] = buckets.get(key, 0.0) + points
+        if issue.assignee_linear_id not in issue_name and issue.assignee_name:
+            issue_name[issue.assignee_linear_id] = issue.assignee_name
+
+    rows: list[AdhocByDayPoint] = []
+    for (day, linear_id), points in sorted(
+        buckets.items(),
+        key=lambda item: (item[0][0], (item[0][1] or "")),
+    ):
+        if linear_id is None:
+            name = UNASSIGNED_LABEL
+            group_id = None
+        else:
+            name = name_by_id.get(linear_id) or issue_name.get(linear_id) or linear_id
+            group_id = group_by_id.get(linear_id)
+        rows.append(
+            AdhocByDayPoint(
+                date=day,
+                assignee=name,
+                linear_id=linear_id,
+                group_id=group_id,
+                points=points,
+            )
+        )
+    return rows
 
 
 def _is_adhoc(issue: Issue, cycle_start: datetime | None, tz: ZoneInfo) -> bool:

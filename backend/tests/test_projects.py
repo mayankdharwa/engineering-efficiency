@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -11,8 +12,14 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
-from app.models import Cycle, Issue, Project, ProjectIssue, Team, TeamCost
-from app.projects import compute_team_project_costs
+from app.models import AppSettings, Cycle, Issue, Project, ProjectIssue, Team, TeamCost
+from app.projects import (
+    HEALTH_AHEAD,
+    HEALTH_LAGGING,
+    HEALTH_ON_TRACK,
+    compute_team_project_costs,
+    project_schedule_health,
+)
 from app.sync import sync_team_projects
 
 
@@ -316,6 +323,7 @@ def test_cost_uses_half_man_day_and_excludes_canceled() -> None:
         assert alpha.done_points == 2.0
         assert alpha.unestimated_issues == 1
         assert alpha.issue_count == 5
+        assert alpha.incurred_cost == 1000.0
         assert alpha.cost == 3000.0
         assert alpha.currency == "€"
         assert by_name["Empty"].points == 0.0
@@ -436,6 +444,7 @@ def test_projects_endpoint_returns_cost_totals() -> None:
     assert len(body) == 1
     assert body[0]["name"] == "Alpha"
     assert body[0]["points"] == 3.0
+    assert body[0]["incurred_cost"] == 0.0
     assert body[0]["cost"] == 300.0
     assert body[0]["issues"][0]["identifier"] == "ENG-1"
     assert body[0]["excluded"] is False
@@ -498,3 +507,135 @@ def test_update_project_excluded() -> None:
         json={"excluded": True},
     )
     assert missing.status_code == 404
+
+
+def _health(
+    points: float,
+    done_points: float,
+    target_date: str | None,
+    now: datetime,
+) -> tuple[str | None, float | None, float | None]:
+    return project_schedule_health(
+        points=points,
+        done_points=done_points,
+        target_date=target_date,
+        now=now,
+        tz=ZoneInfo("UTC"),
+        cutoff_hour=19,
+    )
+
+
+def test_project_health_requires_target_date() -> None:
+    now = datetime(2026, 10, 14, 11, 0, tzinfo=UTC)
+    assert _health(10, 2, None, now) == (None, None, None)
+    assert _health(10, 2, "not-a-date", now) == (None, None, None)
+
+
+def test_project_health_on_track_within_one_day_buffer() -> None:
+    # Wednesday before cutoff; target Friday → 3 working days left.
+    now = datetime(2026, 10, 14, 11, 0, tzinfo=UTC)
+    # 6 remaining points need exactly 3 days → On Track; expected done = 10 - 6 = 4.
+    assert _health(10, 4, "2026-10-16", now) == (HEALTH_ON_TRACK, 4.0, 3.0)
+    # 1 day spare (4 remaining points / 2 days needed vs 3 left) stays On Track.
+    assert _health(10, 6, "2026-10-16", now) == (HEALTH_ON_TRACK, 4.0, 3.0)
+    # 1 day behind (8 remaining / 4 days needed vs 3 left) stays On Track.
+    assert _health(10, 2, "2026-10-16", now) == (HEALTH_ON_TRACK, 4.0, 3.0)
+
+
+def test_project_health_ahead_and_lagging_beyond_buffer() -> None:
+    now = datetime(2026, 10, 14, 11, 0, tzinfo=UTC)
+    # 2 remaining points need 1 day vs 3 left → 2 days spare → Ahead.
+    assert _health(10, 8, "2026-10-16", now) == (HEALTH_AHEAD, 4.0, 3.0)
+    # 10 remaining points need 5 days vs 3 left → 2 days short → Lagging.
+    assert _health(10, 0, "2026-10-16", now) == (HEALTH_LAGGING, 4.0, 3.0)
+
+
+def test_project_health_uses_cutoff_and_skips_weekends() -> None:
+    after_cutoff = datetime(2026, 10, 14, 20, 0, tzinfo=UTC)
+    # After Wednesday cutoff, Thu + Fri remain.
+    health, expected, days = _health(10, 4, "2026-10-16", after_cutoff)
+    assert days == 2.0
+    assert expected == 6.0
+    assert health == HEALTH_ON_TRACK
+
+    friday = datetime(2026, 10, 16, 11, 0, tzinfo=UTC)
+    # Friday through Monday is Fri + Mon.
+    _, _, days = _health(4, 0, "2026-10-19", friday)
+    assert days == 2.0
+
+
+def test_project_costs_include_schedule_health() -> None:
+    now = datetime(2026, 10, 14, 11, 0, tzinfo=UTC)
+    with _session() as db:
+        team = _add_team(db)
+        project = Project(
+            team_id=team.id,
+            linear_id="p1",
+            name="Alpha",
+            target_date="2026-10-16",
+        )
+        db.add(project)
+        db.flush()
+        db.add(
+            ProjectIssue(
+                team_id=team.id,
+                project_id=project.id,
+                linear_id="i1",
+                identifier="ENG-1",
+                title="Work",
+                estimate=10.0,
+                state_type="started",
+            )
+        )
+        db.commit()
+
+        views = compute_team_project_costs(db, team, now=now)
+        assert views[0].health == HEALTH_LAGGING
+        assert views[0].expected_done_points == 4.0
+        assert views[0].working_days_left == 3.0
+
+
+def test_project_health_follows_app_timezone_and_cutoff() -> None:
+    now = datetime(2026, 10, 14, 13, 30, tzinfo=UTC)  # 13:30 UTC == 19:00 IST
+    with _session() as db:
+        team = _add_team(db)
+        project = Project(
+            team_id=team.id,
+            linear_id="p1",
+            name="Alpha",
+            target_date="2026-10-16",
+        )
+        db.add(project)
+        db.flush()
+        db.add(
+            ProjectIssue(
+                team_id=team.id,
+                project_id=project.id,
+                linear_id="i1",
+                identifier="ENG-1",
+                title="Work",
+                estimate=10.0,
+                state_type="started",
+            )
+        )
+        db.commit()
+
+        # Default settings are UTC / 19:00, so Wednesday still counts.
+        utc_view = compute_team_project_costs(db, team, now=now)[0]
+        assert utc_view.working_days_left == 3.0
+        assert utc_view.expected_done_points == 4.0
+
+        db.add(AppSettings(id=1, timezone="Asia/Kolkata", day_cutoff_hour=19))
+        db.commit()
+        ist_view = compute_team_project_costs(db, team, now=now)[0]
+        assert ist_view.working_days_left == 2.0
+        assert ist_view.expected_done_points == 6.0
+
+        settings = db.get(AppSettings, 1)
+        assert settings is not None
+        settings.timezone = "UTC"
+        settings.day_cutoff_hour = 12
+        db.commit()
+        early_cutoff = compute_team_project_costs(db, team, now=now)[0]
+        assert early_cutoff.working_days_left == 2.0
+        assert early_cutoff.expected_done_points == 6.0

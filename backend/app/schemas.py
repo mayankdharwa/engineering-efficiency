@@ -121,6 +121,14 @@ class VelocityTrendPointOut(BaseModel):
     velocity: float | None = None
 
 
+class AdhocByDayPointOut(BaseModel):
+    date: str
+    assignee: str
+    linear_id: str | None = None
+    group_id: int | None = None
+    points: float
+
+
 class GroupMetricsOut(BaseModel):
     group_id: int | None = None
     label: str
@@ -172,6 +180,8 @@ class TeamStatsOut(CycleHeaderOut):
     members: list[MemberMetricsOut] = []
     groups: list[GroupMetricsOut] = []
     velocity_trend: list[VelocityTrendPointOut] = []
+    adhoc_dates: list[str] = []
+    adhoc_by_day: list[AdhocByDayPointOut] = []
 
 
 class GroupOut(BaseModel):
@@ -285,9 +295,13 @@ class ProjectOut(BaseModel):
     points: float
     done_points: float
     unestimated_issues: int
+    incurred_cost: float = 0
     cost: float
     currency: CurrencySymbol = "$"
     man_day_cost: int = 0
+    health: str | None = None
+    expected_done_points: float | None = None
+    working_days_left: float | None = None
     issues: list[ProjectIssueOut] = []
 
 

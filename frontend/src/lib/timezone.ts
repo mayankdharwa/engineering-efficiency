@@ -55,6 +55,41 @@ export function isoDateInTimeZone(value: string | null | undefined, timeZone: st
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
+/** Parse a Linear calendar date (`YYYY-MM-DD`). */
+export function parseIsoDate(
+  value: string | null | undefined,
+): { year: number; month: number; day: number } | null {
+  if (!value) return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+  if (!match) return null
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) }
+}
+
+const MS_PER_DAY = 86_400_000
+
+/** Weekdays after today in `timeZone` through `targetDate` (Mon–Fri).
+
+Overdue dates return ``null``. A due date of today returns ``0``.
+ */
+export function weekdaysUntil(
+  targetDate: string,
+  timeZone: string,
+  now: Date = new Date(),
+): number | null {
+  const due = parseIsoDate(targetDate)
+  const today = parseIsoDate(isoDateInTimeZone(now.toISOString(), timeZone))
+  if (!due || !today) return null
+  const dueUtc = Date.UTC(due.year, due.month - 1, due.day)
+  const todayUtc = Date.UTC(today.year, today.month - 1, today.day)
+  if (dueUtc < todayUtc) return null
+  let days = 0
+  for (let cursor = todayUtc + MS_PER_DAY; cursor <= dueUtc; cursor += MS_PER_DAY) {
+    const weekday = new Date(cursor).getUTCDay()
+    if (weekday !== 0 && weekday !== 6) days += 1
+  }
+  return days
+}
+
 /** Convert a `YYYY-MM-DD` value (local midnight in `timeZone`) to a UTC ISO string. */
 export function zonedDateToUtcIso(value: string, timeZone: string): string | null {
   if (!value) return null

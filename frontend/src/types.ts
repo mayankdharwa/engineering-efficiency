@@ -91,6 +91,14 @@ export interface VelocityTrendPointOut {
   velocity: number | null
 }
 
+export interface AdhocByDayPointOut {
+  date: string
+  assignee: string
+  linear_id: string | null
+  group_id: number | null
+  points: number
+}
+
 export interface GroupMetricsOut extends PointMetrics {
   group_id: number | null
   label: string
@@ -134,6 +142,8 @@ export interface TeamStatsOut extends CycleSnapshot {
   members: MemberMetricsOut[]
   groups: GroupMetricsOut[]
   velocity_trend: VelocityTrendPointOut[]
+  adhoc_dates: string[]
+  adhoc_by_day: AdhocByDayPointOut[]
 }
 
 export interface CycleMemberOut {
@@ -221,9 +231,13 @@ export interface ProjectOut {
   points: number
   done_points: number
   unestimated_issues: number
+  incurred_cost: number
   cost: number
   currency: string
   man_day_cost: number
+  health: 'on_track' | 'lagging' | 'ahead' | null
+  expected_done_points: number | null
+  working_days_left: number | null
   issues: ProjectIssueOut[]
 }
 

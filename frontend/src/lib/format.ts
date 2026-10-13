@@ -49,6 +49,16 @@ export function formatDate(value: string | null | undefined, timeZone?: string):
   return date.toLocaleDateString(undefined, { dateStyle: 'medium', timeZone })
 }
 
+/** Format a Linear calendar date (``YYYY-MM-DD``) without a timezone shift. */
+export function formatCalendarDate(value: string | null | undefined): string {
+  if (!value) return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+  if (!match) return formatDate(value)
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 /** Format a 0..1 ratio (bandwidth can exceed 1) as a percentage. */
 export function formatPercent(
   value: number | null | undefined,

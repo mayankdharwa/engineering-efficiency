@@ -1,4 +1,9 @@
-import type { GroupMetricsOut, MemberMetricsOut, VelocityTrendPointOut } from '../types'
+import type {
+  AdhocByDayPointOut,
+  GroupMetricsOut,
+  MemberMetricsOut,
+  VelocityTrendPointOut,
+} from '../types'
 
 /** Sentinel value for the "All groups" option in the filter select. */
 export const ALL_GROUPS_KEY = '__all__'
@@ -21,6 +26,15 @@ export function filterMembers(
 ): MemberMetricsOut[] {
   if (isAllGroups(selected)) return members
   return members.filter((member) => selected.has(groupKey(member.group_id)))
+}
+
+/** Keep adhoc-by-day slices whose assignee belongs to the selected groups. */
+export function filterAdhocByDay(
+  points: AdhocByDayPointOut[],
+  selected: Set<string>,
+): AdhocByDayPointOut[] {
+  if (isAllGroups(selected)) return points
+  return points.filter((point) => selected.has(groupKey(point.group_id)))
 }
 
 export function selectGroups(

@@ -17,6 +17,7 @@ import { GroupMetricsTable } from '../components/GroupMetricsTable'
 import { IssuesTable } from '../components/IssuesTable'
 import { MetricCharts } from '../components/MetricCharts'
 import { MetricsTable } from '../components/MetricsTable'
+import { AdhocByDayChart } from '../components/AdhocByDayChart'
 import { VelocityTrendChart } from '../components/VelocityTrendChart'
 import { useTimezone } from '../hooks/useAppSettings'
 import { useDashboardQueries } from '../hooks/useDashboardQueries'
@@ -200,6 +201,8 @@ export function DashboardPage() {
               />
 
               <VelocityTrendChart points={view.velocityTrend} />
+
+              <AdhocByDayChart dates={view.adhocDates} points={view.adhocByDay} />
 
               <Card>
                 <CardHeader className="border-b">
