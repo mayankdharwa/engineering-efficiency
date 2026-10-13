@@ -211,12 +211,13 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
    select a row to inspect that project's issues (**Show done** defaults on).
    Canceled issues stay in the issue list but are excluded from points and cost.
 10. To share a local copy, open **Settings → Import / Export**. **Download
-    export** writes a JSON snapshot of teams, cycles, issues, groups, costs,
-    projects and settings. The Linear API key (and any other secrets) is never
-    included. The other person imports that file on the same page — their
-    existing Linear key is left alone, and they can save their own under
-    **Linear Setup**. Import replaces shareable local data. The file must match
-    this app's schema version (currently 4).
+    export** writes a zip containing a JSON snapshot of teams, cycles, issues,
+    groups, costs, projects and settings. The Linear API key (and any other
+    secrets) is never included. The other person imports that zip — or an
+    older unpacked `.json` file — on the same page. Their existing Linear key
+    is left alone, and they can save their own under **Linear Setup**. Import
+    replaces shareable local data. The file must match this app's schema
+    version (currently 4).
 
 > Cycle refresh downloads only the team's **active** Linear cycle. Earlier
 > finalized cycles stay stored and can be opened from the cycle picker. Each
@@ -234,8 +235,8 @@ Open <http://localhost:8000>. FastAPI serves the built SPA from
 | GET    | `/api/config`               | Current Linear connection status             |
 | PUT    | `/api/config`               | Save + validate a Linear API key             |
 | POST   | `/api/config/test`          | Re-test the saved connection                 |
-| GET    | `/api/config/export`        | Download a JSON snapshot (Linear key omitted) |
-| POST   | `/api/config/import`        | Replace shareable local data from a snapshot |
+| GET    | `/api/config/export`        | Download a zip snapshot (Linear key omitted) |
+| POST   | `/api/config/import`        | Replace shareable local data from JSON or zip |
 | GET    | `/api/settings`             | Working timezone + end-of-day cutoff         |
 | PUT    | `/api/settings`             | Update the working timezone / cutoff         |
 | GET    | `/api/teams`                | List locally stored teams                    |
@@ -341,6 +342,7 @@ including the cycle start/end date pickers.
 - Cycle refresh and project refresh are separate downloads. Neither writes back
   to Linear.
 - **Import / Export** shares the local SQLite snapshot, not a live Linear
-  connection. The Linear API key is never written into the file; the importer
-  keeps whatever key they already saved. Exports that do not match schema
-  version 4 are rejected.
+  connection. Downloads are a zip containing JSON; import accepts that zip or
+  a plain `.json` file. The Linear API key is never written into the file; the
+  importer keeps whatever key they already saved. Exports that do not match
+  schema version 4 are rejected.

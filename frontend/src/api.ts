@@ -141,7 +141,7 @@ export const api = {
     }
     const blob = await response.blob()
     const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')
-    const filename = match?.[1] ?? 'engineering-efficiency-export.json'
+    const filename = match?.[1] ?? 'engineering-efficiency-export.zip'
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -153,15 +153,16 @@ export const api = {
   },
 
   importData: async (file: File) => {
-    let payload: unknown
-    try {
-      payload = JSON.parse(await file.text())
-    } catch {
-      throw new Error('This file is not valid JSON.')
-    }
-    return request<DataImportOut>('/config/import', {
+    const response = await fetch(`${BASE}/config/import`, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
     })
+    if (!response.ok) {
+      throw new Error(await readErrorDetail(response))
+    }
+    return (await response.json()) as DataImportOut
   },
 }

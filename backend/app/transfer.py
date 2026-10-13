@@ -7,6 +7,9 @@ token that landed in ``issues.raw`` is not copied into the file.
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -33,6 +36,9 @@ from .models import (
 
 EXPORT_FORMAT = "engineering-efficiency-export"
 EXPORT_VERSION = 1
+EXPORT_JSON_NAME = "engineering-efficiency-export.json"
+# Guard against zip bombs when reading an uploaded archive.
+MAX_IMPORT_UNCOMPRESSED = 50 * 1024 * 1024
 
 # Tables that must never appear in a snapshot (secrets or local bookkeeping).
 SECRET_TABLES = frozenset({"linear_config", "schema_version"})
@@ -70,7 +76,7 @@ TABLE_NAMES = tuple(model.__tablename__ for model in EXPORT_MODELS)
 
 
 class TransferError(ValueError):
-    """The snapshot file is missing, incompatible, or not JSON we can apply."""
+    """The snapshot file is missing, incompatible, or not a JSON/zip we can apply."""
 
 
 @dataclass(frozen=True)
@@ -97,8 +103,28 @@ def export_snapshot(db: Session) -> dict[str, Any]:
     }
 
 
+def pack_export_zip(payload: dict[str, Any], json_name: str = EXPORT_JSON_NAME) -> bytes:
+    """Wrap a snapshot dict in a zip that contains a single JSON file."""
+    buffer = io.BytesIO()
+    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(json_name, data)
+    return buffer.getvalue()
+
+
+def decode_import_payload(raw: bytes) -> dict[str, Any]:
+    """Parse an uploaded snapshot that is either JSON or a zip containing JSON."""
+    if not raw:
+        raise TransferError("Import file is empty.")
+    if zipfile.is_zipfile(io.BytesIO(raw)):
+        return _payload_from_zip(raw)
+    return _loads_json_object(raw)
+
+
 def import_snapshot(db: Session, payload: object) -> ImportResult:
     """Replace shareable tables with ``payload``. Leaves ``linear_config`` alone."""
+    if isinstance(payload, (bytes, bytearray)):
+        payload = decode_import_payload(bytes(payload))
     tables = _parse_export(payload)
     try:
         _replace_shareable(db, tables)
@@ -114,6 +140,44 @@ def import_snapshot(db: Session, payload: object) -> ImportResult:
         members=len(tables["team_members"]),
         projects=len(tables.get("projects", [])),
     )
+
+
+def _loads_json_object(raw: bytes) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TransferError("This file is not valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise TransferError("Import file must be a JSON object.")
+    return payload
+
+
+def _payload_from_zip(raw: bytes) -> dict[str, Any]:
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            names = [
+                name
+                for name in archive.namelist()
+                if not name.endswith("/")
+                and not name.startswith("__MACOSX/")
+                and name.lower().endswith(".json")
+            ]
+            if not names:
+                raise TransferError("Zip archive does not contain a JSON export.")
+            chosen = next(
+                (name for name in names if name.endswith(EXPORT_JSON_NAME)),
+                names[0],
+            )
+            info = archive.getinfo(chosen)
+            if info.file_size > MAX_IMPORT_UNCOMPRESSED:
+                raise TransferError("Export file is too large.")
+            with archive.open(chosen) as handle:
+                data = handle.read(MAX_IMPORT_UNCOMPRESSED + 1)
+    except zipfile.BadZipFile as exc:
+        raise TransferError("This zip file could not be read.") from exc
+    if len(data) > MAX_IMPORT_UNCOMPRESSED:
+        raise TransferError("Export file is too large.")
+    return _loads_json_object(data)
 
 
 def _parse_export(payload: object) -> dict[str, list[dict[str, Any]]]:

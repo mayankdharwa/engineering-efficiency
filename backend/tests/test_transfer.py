@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -25,6 +27,7 @@ from app.models import (
     TeamCost,
     TeamMember,
 )
+from app.transfer import decode_import_payload
 
 SECRET_KEY = "lin_api_do_not_export_this_secret"
 
@@ -130,32 +133,40 @@ def _seed(session_factory) -> None:
         db.commit()
 
 
+def _exported(client: TestClient) -> dict:
+    response = client.get("/api/config/export")
+    assert response.status_code == 200
+    return decode_import_payload(response.content)
+
+
 def test_export_omits_linear_key_and_nested_secrets() -> None:
     client, sessions = _make_client()
     _seed(sessions)
 
     response = client.get("/api/config/export")
     assert response.status_code == 200
-    body = response.text
-    assert SECRET_KEY not in body
-    assert "api_key" not in body
-    assert "linear_config" not in body
+    assert response.headers.get("content-type", "").startswith("application/zip")
+    disposition = response.headers.get("content-disposition", "")
+    assert disposition.endswith('.zip"') or '.zip"' in disposition
+    assert SECRET_KEY not in response.content.decode("latin-1")
+    assert b"api_key" not in response.content
+    assert b"linear_config" not in response.content
 
-    payload = response.json()
+    payload = decode_import_payload(response.content)
     assert payload["format"] == "engineering-efficiency-export"
     assert "linear_config" not in payload["tables"]
     assert payload["tables"]["teams"][0]["name"] == "Engineering"
     raw = payload["tables"]["issues"][0]["raw"]
     assert "apiKey" not in raw
     assert raw["title"] == "Ship export"
-    assert "filename=" in response.headers.get("content-disposition", "")
+    assert "filename=" in disposition
 
 
 def test_import_replaces_shareable_data_and_keeps_local_key() -> None:
     client, sessions = _make_client()
     _seed(sessions)
 
-    exported = client.get("/api/config/export").json()
+    exported = _exported(client)
 
     with sessions() as db:
         team = db.get(Team, 1)
@@ -213,9 +224,9 @@ def test_import_round_trip_preserves_shareable_tables() -> None:
     client, sessions = _make_client()
     _seed(sessions)
 
-    first = client.get("/api/config/export").json()
+    first = _exported(client)
     assert client.post("/api/config/import", json=first).status_code == 200
-    second = client.get("/api/config/export").json()
+    second = _exported(client)
     first.pop("exported_at")
     second.pop("exported_at")
     assert first == second
@@ -252,7 +263,7 @@ def test_import_rejects_unknown_format_and_schema() -> None:
 def test_import_ignores_linear_config_smuggled_in_file() -> None:
     client, sessions = _make_client()
     _seed(sessions)
-    exported = client.get("/api/config/export").json()
+    exported = _exported(client)
     exported["tables"]["linear_config"] = [
         {"id": 1, "api_key": "lin_api_smuggled_key", "viewer_name": "Eve"}
     ]
@@ -268,6 +279,67 @@ def test_import_ignores_linear_config_smuggled_in_file() -> None:
         config = db.get(LinearConfig, 1)
         assert config is not None
         assert config.api_key == "lin_api_importer_own_key"
-    later = json.dumps(client.get("/api/config/export").json())
+    later = json.dumps(_exported(client))
     assert "lin_api_smuggled_key" not in later
     assert "lin_api_importer_own_key" not in later
+
+
+def test_import_accepts_zip_and_json_bytes() -> None:
+    client, sessions = _make_client()
+    _seed(sessions)
+
+    zip_response = client.get("/api/config/export")
+    zip_bytes = zip_response.content
+    payload = decode_import_payload(zip_bytes)
+
+    with sessions() as db:
+        team = db.get(Team, 1)
+        assert team is not None
+        team.name = "Mutated"
+        db.commit()
+
+    imported_zip = client.post(
+        "/api/config/import",
+        content=zip_bytes,
+        headers={"Content-Type": "application/zip"},
+    )
+    assert imported_zip.status_code == 200, imported_zip.text
+    with sessions() as db:
+        team = db.get(Team, 1)
+        assert team is not None
+        assert team.name == "Engineering"
+
+    with sessions() as db:
+        team = db.get(Team, 1)
+        assert team is not None
+        team.name = "Mutated again"
+        db.commit()
+
+    imported_json = client.post(
+        "/api/config/import",
+        content=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert imported_json.status_code == 200, imported_json.text
+    with sessions() as db:
+        team = db.get(Team, 1)
+        assert team is not None
+        assert team.name == "Engineering"
+
+
+def test_import_rejects_empty_or_non_json_zip() -> None:
+    client, _sessions = _make_client()
+
+    empty = client.post("/api/config/import", content=b"")
+    assert empty.status_code == 400
+    assert "empty" in empty.json()["detail"]
+
+    not_archive = client.post("/api/config/import", content=b"PK not a zip")
+    assert not_archive.status_code == 400
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr("readme.txt", "not an export")
+    no_json = client.post("/api/config/import", content=buffer.getvalue())
+    assert no_json.status_code == 400
+    assert "does not contain a JSON export" in no_json.json()["detail"]

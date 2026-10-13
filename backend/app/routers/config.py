@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -14,7 +13,7 @@ from ..database import get_db
 from ..linear_client import LinearClient, LinearError
 from ..models import LinearConfig
 from ..schemas import ConnectionTestOut, DataImportOut, LinearConfigIn, LinearConfigOut
-from ..transfer import TransferError, export_snapshot, import_snapshot
+from ..transfer import TransferError, export_snapshot, import_snapshot, pack_export_zip
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -85,21 +84,22 @@ def test_connection(db: Session = Depends(get_db)) -> ConnectionTestOut:
 
 
 @router.get("/export")
-def export_data(db: Session = Depends(get_db)) -> JSONResponse:
-    """Download a JSON snapshot of the local database, minus secrets."""
+def export_data(db: Session = Depends(get_db)) -> Response:
+    """Download a zip of the local database snapshot, minus secrets."""
     payload = export_snapshot(db)
-    filename = f"engineering-efficiency-{datetime.now(UTC).date().isoformat()}.json"
-    return JSONResponse(
-        content=payload,
+    filename = f"engineering-efficiency-{datetime.now(UTC).date().isoformat()}.zip"
+    return Response(
+        content=pack_export_zip(payload),
+        media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
 @router.post("/import", response_model=DataImportOut)
-def import_data(payload: dict[str, Any], db: Session = Depends(get_db)) -> DataImportOut:
-    """Replace shareable local data with a previously exported snapshot."""
+async def import_data(request: Request, db: Session = Depends(get_db)) -> DataImportOut:
+    """Replace shareable local data with a previously exported JSON or zip snapshot."""
     try:
-        result = import_snapshot(db, payload)
+        result = import_snapshot(db, await request.body())
     except TransferError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SQLAlchemyError as exc:

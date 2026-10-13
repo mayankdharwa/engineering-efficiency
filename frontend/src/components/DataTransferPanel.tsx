@@ -73,7 +73,7 @@ export function DataTransferPanel() {
         <CardHeader className="border-b">
           <CardTitle>Export</CardTitle>
           <CardDescription>
-            Download a JSON snapshot of the teams, cycles, projects, issues, groups, costs and
+            Download a zip of the teams, cycles, projects, issues, groups, costs and
             settings stored locally. The Linear API key and any other secrets are
             omitted so the file is safe to share.
           </CardDescription>
@@ -94,8 +94,9 @@ export function DataTransferPanel() {
           <CardTitle>Import</CardTitle>
           <CardDescription>
             Replace the shareable data on this machine with a previously exported
-            snapshot. Your Linear API key stays as it is — save one separately under
-            Linear Setup if you want to refresh from Linear afterwards.
+            JSON or zip snapshot. Your Linear API key stays as it is — save one
+            separately under Linear Setup if you want to refresh from Linear
+            afterwards.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
@@ -105,7 +106,7 @@ export function DataTransferPanel() {
               key={fileInputKey}
               id="import-file"
               type="file"
-              accept="application/json,.json"
+              accept="application/json,.json,application/zip,.zip"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             />
           </div>
