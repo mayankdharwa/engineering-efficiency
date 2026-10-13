@@ -1,0 +1,40 @@
+# VCS / editors
+.git
+.gitignore
+.cursor
+.idea
+.vscode
+.history
+
+# Local deps and build output
+**/.venv
+**/node_modules
+**/dist
+**/.vite
+**/.pnpm-store
+
+# Python caches
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.coverage
+**/htmlcov
+
+# Local secrets and databases
+**/.env
+**/.env.*
+!**/.env.example
+backend/data
+**/*.db
+**/*.sqlite3
+
+# Tests and docs are not needed at runtime
+backend/tests
+*.md
+
+# Misc
+**/.DS_Store
+**/*.log
+**/*.tsbuildinfo

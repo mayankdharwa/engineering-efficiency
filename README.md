@@ -86,6 +86,8 @@ FastAPI serves both the JSON API under `/api` and the built React SPA.
 
 ```
 engineering-efficiency/
+├── Dockerfile
+├── .dockerignore
 ├── backend/
 │   ├── app/
 │   │   ├── main.py           # FastAPI app + SPA hosting
@@ -157,6 +159,30 @@ cd ../backend && uv sync && uv run uvicorn app.main:app --port 8000
 
 Open <http://localhost:8000>. FastAPI serves the built SPA from
 `frontend/dist`, with a fallback to `index.html` for client-side routes.
+
+## Running with Docker
+
+Build the image from the repository root:
+
+```sh
+docker build -t engineering-efficiency .
+```
+
+Run it with the SQLite data directory mounted so the database (including the
+Linear API key) survives container restarts. The image stores the database at
+`/data/engineering_efficiency.db`; bind-mount `backend/data` onto `/data`:
+
+```sh
+mkdir -p backend/data
+docker run --rm -p 8000:8000 \
+  -v "$(pwd)/backend/data:/data" \
+  engineering-efficiency
+```
+
+Open <http://localhost:8000>. On the host the database is
+`backend/data/engineering_efficiency.db` (the same gitignored folder used by a
+local backend). A different host directory works the same way, as long as it is
+mounted at `/data`.
 
 ## Using the app
 
