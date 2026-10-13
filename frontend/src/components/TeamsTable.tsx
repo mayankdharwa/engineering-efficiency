@@ -91,7 +91,7 @@ export function TeamsTable({
       <DataTable
         columns={columns}
         data={teams}
-        emptyMessage="No teams yet. Import them from Linear above."
+        emptyMessage="Import teams above."
       />
 
       <AlertDialog
@@ -104,9 +104,8 @@ export function TeamsTable({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes <strong>{pendingDelete?.name}</strong> and all of its locally stored
-              issues, cycle settings and members. Linear is not affected, but the team&apos;s
-              configuration here will be lost until it is re-imported and refreshed.
+              This removes <strong>{pendingDelete?.name}</strong> and its data from this app.
+              Linear is not changed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

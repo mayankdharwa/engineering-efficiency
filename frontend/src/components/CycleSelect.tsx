@@ -32,7 +32,7 @@ export function CycleSelect({
 }) {
   if (cycles.length === 0) {
     return labelled ? (
-      <p className="text-sm text-muted-foreground">No cycles stored for this team yet.</p>
+      <p className="text-sm text-muted-foreground">No cycles yet.</p>
     ) : null
   }
 

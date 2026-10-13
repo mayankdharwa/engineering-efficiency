@@ -67,7 +67,7 @@ def update_cycle_settings(
     if cycle is None:
         raise HTTPException(
             status_code=400,
-            detail="No active cycle stored for this team. Refresh the team first.",
+            detail="No cycle for this team yet. Refresh to load one.",
         )
 
     finalized = cycle.is_finalized
@@ -115,7 +115,7 @@ def finalize_cycle(team_id: int, db: Session = Depends(get_db)) -> CycleSettings
     if cycle is None:
         raise HTTPException(
             status_code=400,
-            detail="No active cycle stored for this team. Refresh the team first.",
+            detail="No cycle for this team yet. Refresh to load one.",
         )
     if not cycle.is_finalized:
         cycle.archived_at = utcnow()

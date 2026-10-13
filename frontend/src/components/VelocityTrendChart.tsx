@@ -7,7 +7,6 @@ import { useMemo } from 'react'
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -71,14 +70,11 @@ export function VelocityTrendChart({ points }: VelocityTrendChartProps) {
     <Card>
       <CardHeader>
         <CardTitle>Velocity trend</CardTitle>
-        <CardDescription>
-          Velocity at the end of each working day so far · 100% = on pace.
-        </CardDescription>
       </CardHeader>
       <CardContent>
         {points.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No elapsed working days yet for this cycle.
+            No elapsed working days yet.
           </p>
         ) : (
           <Chart definition={definition} height={240} ariaLabel="Velocity trend by day" />

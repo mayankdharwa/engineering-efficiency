@@ -62,7 +62,7 @@ export function MetricsTable({ members, selected, pointsPerDay }: MetricsTablePr
       columns={columns}
       data={filtered}
       centerExcept={['name']}
-      emptyMessage="No member metrics yet. Refresh the team to download its current cycle."
+      emptyMessage="Refresh this team to load its cycle."
     />
   )
 }

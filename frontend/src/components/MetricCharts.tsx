@@ -182,10 +182,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
       <Card>
         <CardHeader>
           <CardTitle>Capacity vs points taken</CardTitle>
-          <CardDescription>
-            Capacity is the full bar; points taken fill it from the left. Dotted ={' '}
-            {formatPoints(fullCapacityPoints)} pts.
-          </CardDescription>
+          <CardDescription>Dotted = {formatPoints(fullCapacityPoints)} pts.</CardDescription>
         </CardHeader>
         <CardContent>
           <Chart
@@ -199,10 +196,6 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
       <Card>
         <CardHeader>
           <CardTitle>Velocity by person</CardTitle>
-          <CardDescription>
-            Done ÷ expected-to-date · solid = 100% (on pace) · dotted = 85% · over 120% is
-            truncated.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           {workingMembers.length === 0 ? (
@@ -220,7 +213,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
       <Card className="xl:col-span-2">
         <CardHeader>
           <CardTitle>Planned vs adhoc points</CardTitle>
-          <CardDescription>Adhoc = attached after the cycle&apos;s first day.</CardDescription>
+          <CardDescription>Adhoc is work attached after the first day.</CardDescription>
         </CardHeader>
         <CardContent>
           {workingMembers.length === 0 ? (

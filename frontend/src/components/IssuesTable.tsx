@@ -116,7 +116,7 @@ export function IssuesTable({
       emptyMessage={
         emptyMessage ??
         (issues.length === 0
-          ? 'No issues stored for this team yet. Refresh the team to download data.'
+          ? 'Refresh this team to load issues.'
           : 'No issues match the current filter.')
       }
     />

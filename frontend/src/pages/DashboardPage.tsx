@@ -66,7 +66,6 @@ export function DashboardPage() {
   const teams = teamsQuery.data ?? []
   const cycles = cyclesQuery.data ?? []
   const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null
-  const selectedCycle = cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
   const stats = statsQuery.data
   const view = useMemo(
     () => buildDashboardView(stats, selectedGroups),
@@ -93,9 +92,7 @@ export function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>No teams available</CardTitle>
-            <CardDescription>
-              Configure your Linear API key and import teams before viewing stats.
-            </CardDescription>
+            <CardDescription>Import teams in Settings first.</CardDescription>
           </CardHeader>
           <CardContent>
             <Link to="/config" className={buttonVariants()}>
@@ -135,7 +132,7 @@ export function DashboardPage() {
               <CardHeader>
                 <CardTitle>No cycle data yet</CardTitle>
                 <CardDescription>
-                  {stats?.message ?? 'Refresh this team to download its cycle.'}
+                  {stats?.message ?? 'Refresh this team to load its cycle.'}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -207,10 +204,6 @@ export function DashboardPage() {
               <Card>
                 <CardHeader className="border-b">
                   <CardTitle>Group breakdown</CardTitle>
-                  <CardDescription>
-                    Team totals grouped by member group for the selected cycle. Add and assign
-                    groups in Settings.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <GroupMetricsTable
@@ -224,9 +217,6 @@ export function DashboardPage() {
               <Card>
                 <CardHeader className="border-b">
                   <CardTitle>Per-person breakdown</CardTitle>
-                  <CardDescription>
-                    Cycle metrics for members who count toward capacity.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <MetricsTable
@@ -242,11 +232,6 @@ export function DashboardPage() {
           <Card>
             <CardHeader className="border-b">
               <CardTitle>Issues</CardTitle>
-              <CardDescription>
-                {selectedCycle && !selectedCycle.is_current
-                  ? "Issues stored for the selected cycle."
-                  : "Issues downloaded from the team's current cycle."}
-              </CardDescription>
               {!issuesQuery.isLoading && !issuesQuery.isError && (
                 <CardAction>
                   <Label className="font-normal text-muted-foreground">

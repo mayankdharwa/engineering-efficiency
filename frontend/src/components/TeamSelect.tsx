@@ -9,7 +9,7 @@ export function TeamSelect() {
   if (teams.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Import teams from Linear in <strong>Linear Setup</strong> first.
+        Import teams in Linear Setup first.
       </p>
     )
   }

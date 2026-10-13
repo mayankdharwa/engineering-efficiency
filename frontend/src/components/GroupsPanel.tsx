@@ -128,7 +128,7 @@ export function GroupsPanel() {
   const deleteGroup = useMutation({
     mutationFn: (id: number) => api.deleteGroup(teamId as number, id),
     onSuccess: () => {
-      notifySuccess('Group deleted; members were unassigned.')
+      notifySuccess('Group deleted.')
       invalidate()
     },
     onError: (error: Error) => notifyError(error.message),
@@ -154,10 +154,7 @@ export function GroupsPanel() {
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Groups</CardTitle>
-          <CardDescription>
-            Add any number of groups and pick a colour for each chip. Assign people in Team
-            Configuration. Group totals drive the Cycles page group breakdown and filter.
-          </CardDescription>
+          <CardDescription>Assign people in Team Configuration.</CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
           {teamId === null ? null : (

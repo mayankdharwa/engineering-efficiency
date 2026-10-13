@@ -58,7 +58,7 @@ export function LinearConnectionPanel() {
               {formatDateTime(config.updated_at, timezone)}.
             </>
           ) : (
-            'Paste a Linear personal API key. It is stored in the local SQLite database only.'
+            'Paste a Linear personal API key. It is stored only on this machine.'
           )}
         </CardDescription>
       </CardHeader>

@@ -122,12 +122,7 @@ export function TeamConfigurationPanel() {
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Team Members</CardTitle>
-          <CardDescription>
-            Assign each person to a group and untick anyone who shouldn&apos;t count toward capacity
-            (e.g. non-developers or people not on this cycle). Group, capacity and leave are stored
-            per cycle. A new cycle copies the previous cycle&apos;s groups and capacity; leave starts
-            at zero.
-          </CardDescription>
+          <CardDescription>Group, capacity, and leave for this cycle.</CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
           {teamId === null ? null : (
@@ -137,7 +132,7 @@ export function TeamConfigurationPanel() {
             error={cycleQuery.error}
             ready={Boolean(cycle?.ready)}
             notReadyMessage={
-              cycle?.message ?? 'Refresh this team in Linear Setup to download its membership.'
+              cycle?.message ?? 'Refresh this team in Linear Setup first.'
             }
             skeleton={<Skeleton className="h-40 w-full" />}
           >

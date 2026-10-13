@@ -75,9 +75,7 @@ export function TimeConfigurationPanel() {
       <CardHeader className="border-b">
         <CardTitle>Time Configuration</CardTitle>
         <CardDescription>
-          The working timezone and the local hour after which the current day counts as elapsed.
-          Until that hour passes, a partial day is not counted, so velocity isn&apos;t measured
-          against work that hasn&apos;t happened yet.
+          Working timezone and when the current day counts as elapsed.
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-4">

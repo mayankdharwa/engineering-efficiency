@@ -49,7 +49,7 @@ export function ProjectsTable({
   projects,
   selectedProjectId,
   onSelect,
-  emptyMessage = 'No projects stored for this team yet. Refresh to download them from Linear.',
+  emptyMessage = 'Refresh this team to load projects.',
 }: {
   projects: ProjectOut[]
   selectedProjectId: number | null

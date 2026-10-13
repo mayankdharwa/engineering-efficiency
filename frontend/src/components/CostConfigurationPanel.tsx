@@ -78,14 +78,11 @@ export function CostConfigurationPanel() {
     <Card>
       <CardHeader className="border-b">
         <CardTitle>Cost Configuration</CardTitle>
-        <CardDescription>
-          The currency and cost of a single man-day for this team. These are used to value
-          capacity and work on Cycles.
-        </CardDescription>
+        <CardDescription>Currency and cost of one man-day.</CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
         {teamId === null ? (
-          <p className="text-sm text-muted-foreground">Select a team to configure its costs.</p>
+          <p className="text-sm text-muted-foreground">Select a team first.</p>
         ) : (
           <QueryPanelBody
             isLoading={costQuery.isLoading}

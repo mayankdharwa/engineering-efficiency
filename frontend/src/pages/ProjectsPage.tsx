@@ -122,9 +122,7 @@ export function ProjectsPage() {
         <Card>
           <CardHeader>
             <CardTitle>No teams available</CardTitle>
-            <CardDescription>
-              Configure your Linear API key and import teams before viewing projects.
-            </CardDescription>
+            <CardDescription>Import teams in Settings first.</CardDescription>
           </CardHeader>
           <CardContent>
             <Link to="/config" className={buttonVariants()}>
@@ -174,7 +172,7 @@ export function ProjectsPage() {
               <CardHeader>
                 <CardTitle>No project data yet</CardTitle>
                 <CardDescription>
-                  Refresh this team to download its Linear projects and their issues.
+                  Refresh this team to load its projects.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -196,7 +194,7 @@ export function ProjectsPage() {
                   value={formatMoney(totals.cost, currency)}
                   hint={
                     manDayCost > 0
-                      ? `${formatMoney(manDayCost, currency)}/day · 1 pt = 0.5 day`
+                      ? `${formatMoney(manDayCost, currency)}/day`
                       : 'Set a man-day cost in Settings'
                   }
                 />
@@ -205,10 +203,6 @@ export function ProjectsPage() {
               <Card>
                 <CardHeader className="border-b">
                   <CardTitle>Projects</CardTitle>
-                  <CardDescription>
-                    Cost is the sum of issue points times man-day cost times 0.5. Select a
-                    project to see its issues.
-                  </CardDescription>
                   <CardAction>
                     <div className="w-52">
                       <ProjectStateFilter
@@ -263,7 +257,7 @@ export function ProjectsPage() {
                       issues={selectedProject.issues}
                       showDone={showDone}
                       showProject={false}
-                      emptyMessage="No issues stored for this project."
+                      emptyMessage="No issues in this project."
                     />
                   </CardContent>
                 </Card>

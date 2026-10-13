@@ -83,9 +83,7 @@ export function CycleConfigurationPanel() {
   const finalizeMutation = useMutation({
     mutationFn: () => api.finalizeCycle(teamId as number),
     onSuccess: () => {
-      notifySuccess(
-        'Cycle finalized. Its data is preserved; refresh the team to load the next cycle.',
-      )
+      notifySuccess('Cycle finalized.')
       if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
     onError: (error: Error) => notifyError(error.message),
@@ -119,8 +117,7 @@ export function CycleConfigurationPanel() {
         <CardHeader className="border-b">
           <CardTitle>Cycle Configuration</CardTitle>
           <CardDescription>
-            Cycle dates come from Linear. Override the number of working days when the cycle
-            contains holidays.
+            Override working days for holidays.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
@@ -131,7 +128,7 @@ export function CycleConfigurationPanel() {
             error={cycleQuery.error}
             ready={Boolean(cycle?.ready)}
             notReadyMessage={
-              cycle?.message ?? 'Refresh this team in Linear Setup to download its current cycle.'
+              cycle?.message ?? 'Refresh this team in Linear Setup first.'
             }
             skeleton={
               <div className="space-y-3">
@@ -210,36 +207,25 @@ export function CycleConfigurationPanel() {
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Finalize Cycle</CardTitle>
-          <CardDescription>
-            Mark this team&apos;s current cycle as finished so it can be refreshed into a
-            newer one. The cycle&apos;s data is preserved for history, and only this team is
-            affected, so teams on different cycle schedules roll over independently.
-          </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
           {cycle && !cycle.is_current ? (
             <p className="text-sm text-muted-foreground">
-              This is a historical cycle. Finalize applies only to the team&apos;s current cycle.
+              Finalize applies only to the current cycle.
             </p>
           ) : cycle?.archived_at ? (
             <p className="text-sm text-muted-foreground">
-              This cycle is finalized and locked. Refresh the team once Linear moves on to load
-              the next cycle; group and capacity settings will be copied forward.
+              This cycle is locked. Refresh the team to load the next one.
             </p>
           ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={!cycle?.ready || finalizeMutation.isPending}
-                onClick={() => setConfirmOpen(true)}
-              >
-                {finalizeMutation.isPending ? 'Finalizing…' : 'Finalize this cycle'}
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                Required before a refresh can switch the team to a newer cycle.
-              </span>
-            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!cycle?.ready || finalizeMutation.isPending}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {finalizeMutation.isPending ? 'Finalizing…' : 'Finalize this cycle'}
+            </Button>
           )}
         </CardContent>
       </Card>
@@ -249,9 +235,7 @@ export function CycleConfigurationPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle>Finalize this team&apos;s cycle?</AlertDialogTitle>
             <AlertDialogDescription>
-              The current cycle is marked as finished and kept for history. Refreshing
-              afterwards will download the team&apos;s next cycle. This only affects this
-              team.
+              The cycle is kept. Refresh to load the next one.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

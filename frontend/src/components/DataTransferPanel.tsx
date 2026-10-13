@@ -71,9 +71,7 @@ export function DataTransferPanel() {
         <CardHeader className="border-b">
           <CardTitle>Export</CardTitle>
           <CardDescription>
-            Download a zip of the teams, cycles, projects, issues, groups, costs and
-            settings stored locally. The Linear API key and any other secrets are
-            omitted so the file is safe to share.
+            Download teams, cycles, projects, issues, groups, costs, and settings.
           </CardDescription>
         </CardHeader>
         <CardFooter>
@@ -91,10 +89,7 @@ export function DataTransferPanel() {
         <CardHeader className="border-b">
           <CardTitle>Import</CardTitle>
           <CardDescription>
-            Replace the shareable data on this machine with a previously exported
-            JSON or zip snapshot. Your Linear API key stays as it is — save one
-            separately under Linear Setup if you want to refresh from Linear
-            afterwards.
+            Replace local data with an exported zip or JSON file.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
@@ -125,9 +120,8 @@ export function DataTransferPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle>Replace local data with this file?</AlertDialogTitle>
             <AlertDialogDescription>
-              Teams, cycles, issues, groups, costs and time settings on this
-              machine will be replaced. The Linear API key already saved here is
-              kept. This cannot be undone unless you have your own export.
+              This replaces local teams, cycles, issues, groups, costs, and time
+              settings. It cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

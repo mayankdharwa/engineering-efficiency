@@ -67,9 +67,7 @@ export function TeamsPanel() {
       <CardHeader className="border-b">
         <CardTitle>Teams</CardTitle>
         <CardDescription>
-          Importing fetches the team list. Use <strong>Refresh</strong> to download a team&apos;s
-          current cycle and membership, or <strong>Delete</strong> to remove a team from this
-          dashboard.
+          Import the team list, then refresh a team to load its cycle.
         </CardDescription>
         <CardAction>
           <Button

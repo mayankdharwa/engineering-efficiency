@@ -257,10 +257,7 @@ def compute_team_metrics(
     if cycle is None:
         return TeamMetrics(
             ready=False,
-            message=(
-                "No active cycle stored for this team. Refresh the team to "
-                "download its current cycle."
-            ),
+            message="No cycle for this team yet. Refresh to load one.",
         )
 
     # Working-calendar preferences: which timezone defines a "day" and the

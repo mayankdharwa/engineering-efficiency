@@ -17,13 +17,7 @@ const SECTIONS = [
 export function ConfigLayout() {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Connect to Linear, manage the teams and cycle settings stored locally,
-          or share a snapshot of that data.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <nav
