@@ -82,7 +82,9 @@ preset is tracked in `frontend/components.json`; re-apply it with
 
 FastAPI serves both the JSON API under `/api` and the built React SPA.
 Every page and API (except `/api/health` and the login endpoints) requires a
-session cookie. On first launch the app asks you to create an account.
+session cookie. On first launch the app asks you to create an **admin**
+account. Admins can add more users under **Settings → App Users**. **Readers**
+can open Cycles and Projects but cannot open or change Settings.
 
 ## Repository layout
 
@@ -192,9 +194,11 @@ mounted at `/data`.
 
 ## Using the app
 
-1. Open the app and **create an account** (first launch) or **sign in**. The
-   password is stored only in the local SQLite database as a hash. Import /
-   export never includes this account.
+1. Open the app and **create an admin account** (first launch) or **sign in**.
+   The password is stored only in the local SQLite database as a hash. Import /
+   export never includes accounts. Under **Settings → App Users**, an admin
+   can add more people as **Admin** (full access) or **Reader** (Cycles and
+   Projects only).
 2. Create a Linear **personal API key**: Linear → *Settings* → *Security & access*
    → *Personal API keys*.
 3. Open **Settings**, pick **Linear Setup** in the side panel, paste the key,
@@ -271,7 +275,11 @@ mounted at `/data`.
 | POST   | `/api/auth/setup`           | Create the first account (only when none exist) |
 | POST   | `/api/auth/login`           | Sign in and set the session cookie           |
 | POST   | `/api/auth/logout`          | Clear the session cookie                     |
-| GET    | `/api/auth/me`              | The signed-in username                       |
+| GET    | `/api/auth/me`              | The signed-in username and role              |
+| GET    | `/api/users`                | List local accounts (admin)                  |
+| POST   | `/api/users`                | Create an account (admin)                    |
+| PATCH  | `/api/users/{id}`           | Change a role or password (admin)            |
+| DELETE | `/api/users/{id}`           | Delete an account (admin; not self / last admin) |
 | GET    | `/api/config`               | Current Linear connection status             |
 | PUT    | `/api/config`               | Save + validate a Linear API key             |
 | POST   | `/api/config/test`          | Re-test the saved connection                 |
@@ -301,8 +309,9 @@ mounted at `/data`.
 
 Omitting `cycle_id` uses the team's current cycle. Every route except
 `/api/health` and the public `/api/auth/*` endpoints requires the session
-cookie from login. Interactive docs at `/docs` (and `/redoc`, `/openapi.json`)
-are also behind that login.
+cookie from login. Settings writes, Linear connection, import/export, and
+user management also require the **admin** role. Interactive docs at `/docs`
+(and `/redoc`, `/openapi.json`) are behind login.
 
 ## Database
 
@@ -310,8 +319,8 @@ The SQLite file lives at `backend/data/engineering_efficiency.db` (gitignored).
 On startup the app creates missing tables and applies one-shot migrations up to
 schema version **4**. Tables:
 
-- `users` — the local login account (username + password hash). Created on first
-  launch. Not included in export.
+- `users` — local login accounts (username, password hash, `admin` or `reader`
+  role). The first account is an admin. Not included in export.
 - `linear_config` — the saved API key and resolved viewer/org info (singleton).
   Not included in export.
 - `app_settings` — the working timezone and end-of-day cutoff used by the metrics

@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 
 from .config import DEFAULT_DATA_DIR, settings
 from .database import get_db
-from .models import User
+from .models import User, UserRole
+from .schemas import UserOut, UserRoleName
 
 COOKIE_NAME = "ee_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30
@@ -152,3 +153,31 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated.")
     return user
+
+
+def require_admin(user: User = Depends(require_user)) -> User:
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return user
+
+
+def user_to_out(user: User) -> UserOut:
+    role: UserRoleName = "admin" if user.role == UserRole.ADMIN else "reader"
+    return UserOut(id=user.id, username=user.username, role=role)
+
+
+def admin_count(db: Session) -> int:
+    return int(
+        db.scalar(select(func.count()).select_from(User).where(User.role == UserRole.ADMIN))
+        or 0
+    )
+
+
+def ensure_another_admin(db: Session, user: User) -> None:
+    """Block removing or demoting the last admin."""
+    if user.role != UserRole.ADMIN:
+        return
+    if admin_count(db) <= 1:
+        raise HTTPException(
+            status_code=400, detail="The last admin cannot be removed."
+        )

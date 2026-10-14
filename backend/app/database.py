@@ -123,6 +123,7 @@ def init_db() -> None:
     _add_missing_sqlite_columns()
     _add_member_group_color_column()
     _add_project_excluded_column()
+    _add_user_role_column()
     _migrate_member_roles_to_groups()
     _migrate_to_cycle_memberships()
     _set_schema_version(engine, CURRENT_SCHEMA_VERSION)
@@ -608,6 +609,25 @@ def _add_member_group_color_column() -> None:
             text(
                 "ALTER TABLE member_groups "
                 "ADD COLUMN color VARCHAR(7) NOT NULL DEFAULT '#d97706'"
+            )
+        )
+
+
+def _add_user_role_column() -> None:
+    """Add ``users.role`` to databases created before ADMIN / READER roles."""
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    if "role" in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "ALTER TABLE users "
+                "ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'admin'"
             )
         )
 

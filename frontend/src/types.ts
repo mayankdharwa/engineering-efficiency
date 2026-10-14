@@ -1,11 +1,16 @@
+export type UserRole = 'admin' | 'reader'
+
 export interface AuthStatusOut {
   authenticated: boolean
   setup_required: boolean
   username: string | null
+  role: UserRole | null
 }
 
 export interface UserOut {
+  id: number
   username: string
+  role: UserRole
 }
 
 export interface GroupOut {

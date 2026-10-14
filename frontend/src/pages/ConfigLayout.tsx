@@ -12,6 +12,7 @@ const SECTIONS = [
   { to: '/config/groups', label: 'Groups' },
   { to: '/config/team', label: 'Team Configuration' },
   { to: '/config/data', label: 'Import / Export' },
+  { to: '/config/users', label: 'App Users' },
 ] as const
 
 export function ConfigLayout() {

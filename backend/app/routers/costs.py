@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..auth import require_admin
 from ..costs import TeamCostView, get_team_cost
 from ..database import get_db
 from ..models import TeamCost
@@ -30,7 +31,11 @@ def read_team_cost(team_id: int, db: Session = Depends(get_db)) -> TeamCostOut:
     return _cost_out(team.id, get_team_cost(db, team.id))
 
 
-@router.put("/{team_id}/cost", response_model=TeamCostOut)
+@router.put(
+    "/{team_id}/cost",
+    response_model=TeamCostOut,
+    dependencies=[Depends(require_admin)],
+)
 def update_team_cost(
     team_id: int, payload: TeamCostIn, db: Session = Depends(get_db)
 ) -> TeamCostOut:

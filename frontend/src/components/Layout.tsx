@@ -44,9 +44,11 @@ export function Layout({ children }: { children: ReactNode }) {
               <Link to="/projects" className={navIdle} activeProps={{ className: navActive }}>
                 Projects
               </Link>
-              <Link to="/config" className={navIdle} activeProps={{ className: navActive }}>
-                Settings
-              </Link>
+              {authQuery.data?.role === 'admin' ? (
+                <Link to="/config" className={navIdle} activeProps={{ className: navActive }}>
+                  Settings
+                </Link>
+              ) : null}
             </nav>
             {authQuery.data?.username ? (
               <span className="hidden text-sm text-muted-foreground sm:inline">

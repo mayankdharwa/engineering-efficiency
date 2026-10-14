@@ -16,6 +16,7 @@ import type {
   TeamOut,
   TeamStatsOut,
   UserOut,
+  UserRole,
 } from './types'
 
 const BASE = '/api'
@@ -81,6 +82,18 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
+  listUsers: () => request<UserOut[]>('/users'),
+  createUser: (payload: { username: string; password: string; role: UserRole }) =>
+    request<UserOut>('/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateUser: (userId: number, payload: { role?: UserRole; password?: string }) =>
+    request<UserOut>(`/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteUser: (userId: number) => request<void>(`/users/${userId}`, { method: 'DELETE' }),
 
   getConfig: () => request<LinearConfigOut>('/config'),
   saveConfig: (apiKey: string) =>

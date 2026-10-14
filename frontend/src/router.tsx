@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { Toaster } from '@/components/ui/toast'
 import { Layout } from './components/Layout'
+import { AppUsersPanel } from './components/AppUsersPanel'
 import { CycleConfigurationPanel } from './components/CycleConfigurationPanel'
 import { DataTransferPanel } from './components/DataTransferPanel'
 import { GroupsPanel } from './components/GroupsPanel'
@@ -71,6 +72,12 @@ const projectsRoute = createRoute({
 const configRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/config',
+  beforeLoad: async () => {
+    const status = await api.getAuthStatus()
+    if (status.role !== 'admin') {
+      throw redirect({ to: '/' })
+    }
+  },
   component: ConfigLayout,
 })
 
@@ -118,6 +125,12 @@ const dataRoute = createRoute({
   component: DataTransferPanel,
 })
 
+const usersRoute = createRoute({
+  getParentRoute: () => configRoute,
+  path: '/users',
+  component: AppUsersPanel,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   appRoute.addChildren([
@@ -131,6 +144,7 @@ const routeTree = rootRoute.addChildren([
       groupsRoute,
       teamRoute,
       dataRoute,
+      usersRoute,
     ]),
   ]),
 ])

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from ..auth import require_admin
 from ..cycles import format_cycle_label
 from ..database import get_db
 from ..linear_client import LinearError
@@ -64,7 +65,7 @@ def list_teams(db: Session = Depends(get_db)) -> list[Team]:
     return list(db.scalars(select(Team).order_by(Team.name)).all())
 
 
-@router.post("/import", response_model=list[TeamOut])
+@router.post("/import", response_model=list[TeamOut], dependencies=[Depends(require_admin)])
 def import_teams(db: Session = Depends(get_db)) -> list[Team]:
     """Fetch the team list from Linear and store it locally."""
     with _tracked_sync_run(db, SyncKind.TEAMS) as run:
@@ -80,7 +81,11 @@ def import_teams(db: Session = Depends(get_db)) -> list[Team]:
     return teams
 
 
-@router.post("/{team_id}/refresh", response_model=RefreshResult)
+@router.post(
+    "/{team_id}/refresh",
+    response_model=RefreshResult,
+    dependencies=[Depends(require_admin)],
+)
 def refresh_team(team_id: int, db: Session = Depends(get_db)) -> RefreshResult:
     """Download the current cycle's issues for one team into SQLite."""
     team = get_team_or_404(db, team_id)
@@ -114,7 +119,9 @@ def refresh_team(team_id: int, db: Session = Depends(get_db)) -> RefreshResult:
     )
 
 
-@router.delete("/{team_id}", status_code=204)
+@router.delete(
+    "/{team_id}", status_code=204, dependencies=[Depends(require_admin)]
+)
 def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
     """Delete a team and all of its locally stored data.
 

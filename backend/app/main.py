@@ -15,7 +15,7 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from .auth import require_user
+from .auth import require_admin, require_user
 from .config import settings
 from .database import init_db
 from .models import User
@@ -28,6 +28,7 @@ from .routers import projects as projects_router
 from .routers import settings as settings_router
 from .routers import stats as stats_router
 from .routers import teams as teams_router
+from .routers import users as users_router
 
 
 @asynccontextmanager
@@ -54,9 +55,11 @@ app.add_middleware(
 )
 
 _protected = [Depends(require_user)]
+_admin = [Depends(require_admin)]
 
 app.include_router(auth_router.router, prefix="/api")
-app.include_router(config_router.router, prefix="/api", dependencies=_protected)
+app.include_router(users_router.router, prefix="/api")
+app.include_router(config_router.router, prefix="/api", dependencies=_admin)
 app.include_router(settings_router.router, prefix="/api", dependencies=_protected)
 app.include_router(teams_router.router, prefix="/api", dependencies=_protected)
 app.include_router(cycles_router.router, prefix="/api", dependencies=_protected)

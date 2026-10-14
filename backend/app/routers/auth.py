@@ -13,10 +13,11 @@ from ..auth import (
     set_session_cookie,
     user_count,
     user_from_request,
+    user_to_out,
     verify_password,
 )
 from ..database import get_db
-from ..models import User
+from ..models import User, UserRole
 from ..schemas import AuthCredentialsIn, AuthStatusOut, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -29,6 +30,7 @@ def auth_status(request: Request, db: Session = Depends(get_db)) -> AuthStatusOu
         authenticated=user is not None,
         setup_required=user_count(db) == 0,
         username=user.username if user else None,
+        role=user_to_out(user).role if user else None,
     )
 
 
@@ -45,12 +47,13 @@ def setup_account(
     user = User(
         username=payload.username,
         password_hash=hash_password(payload.password),
+        role=UserRole.ADMIN,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     set_session_cookie(response, user.id)
-    return UserOut(username=user.username)
+    return user_to_out(user)
 
 
 @router.post("/login", response_model=UserOut)
@@ -63,7 +66,7 @@ def login(
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
     set_session_cookie(response, user.id)
-    return UserOut(username=user.username)
+    return user_to_out(user)
 
 
 @router.post("/logout", status_code=204)
@@ -73,4 +76,4 @@ def logout(response: Response) -> None:
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(require_user)) -> UserOut:
-    return UserOut(username=user.username)
+    return user_to_out(user)

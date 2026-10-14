@@ -32,29 +32,55 @@ class ConnectionTestOut(BaseModel):
     organization_name: str | None = None
 
 
+UserRoleName = Literal["admin", "reader"]
+
+
+def normalize_username(value: str) -> str:
+    username = value.strip()
+    if not username:
+        raise ValueError("Username is required.")
+    if any(ch.isspace() for ch in username):
+        raise ValueError("Username cannot contain spaces.")
+    return username.lower()
+
+
 class AuthCredentialsIn(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=8, max_length=128)
 
     @field_validator("username")
     @classmethod
-    def normalize_username(cls, value: str) -> str:
-        username = value.strip()
-        if not username:
-            raise ValueError("Username is required.")
-        if any(ch.isspace() for ch in username):
-            raise ValueError("Username cannot contain spaces.")
-        return username.lower()
+    def normalize_username_field(cls, value: str) -> str:
+        return normalize_username(value)
 
 
 class AuthStatusOut(BaseModel):
     authenticated: bool
     setup_required: bool
     username: str | None = None
+    role: UserRoleName | None = None
 
 
 class UserOut(BaseModel):
+    id: int
     username: str
+    role: UserRoleName
+
+
+class UserCreateIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
+    role: UserRoleName = "reader"
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username_field(cls, value: str) -> str:
+        return normalize_username(value)
+
+
+class UserUpdateIn(BaseModel):
+    role: UserRoleName | None = None
+    password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class AppSettingsOut(BaseModel):

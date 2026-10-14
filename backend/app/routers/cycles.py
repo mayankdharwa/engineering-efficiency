@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..app_settings import get_app_settings
+from ..auth import require_admin
 from ..cycles import apply_cycle_member_updates, build_cycle_settings_out
 from ..database import get_db
 from ..metrics import get_cycle, weekdays_between
@@ -54,7 +55,11 @@ def read_cycle_settings(
     return build_cycle_settings_out(db, team, resolve_cycle_or_404(db, team, cycle_id))
 
 
-@router.put("/{team_id}/cycle", response_model=CycleSettingsOut)
+@router.put(
+    "/{team_id}/cycle",
+    response_model=CycleSettingsOut,
+    dependencies=[Depends(require_admin)],
+)
 def update_cycle_settings(
     team_id: int,
     payload: CycleSettingsIn,
@@ -102,7 +107,11 @@ def update_cycle_settings(
     return build_cycle_settings_out(db, team, cycle)
 
 
-@router.post("/{team_id}/cycle/finalize", response_model=CycleSettingsOut)
+@router.post(
+    "/{team_id}/cycle/finalize",
+    response_model=CycleSettingsOut,
+    dependencies=[Depends(require_admin)],
+)
 def finalize_cycle(team_id: int, db: Session = Depends(get_db)) -> CycleSettingsOut:
     """Mark the team's current cycle as finalized (frozen).
 

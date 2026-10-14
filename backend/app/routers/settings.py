@@ -12,6 +12,7 @@ from ..app_settings import (
     DEFAULT_TIMEZONE,
     get_app_settings,
 )
+from ..auth import require_admin
 from ..database import get_db
 from ..models import AppSettings
 from ..schemas import AppSettingsIn, AppSettingsOut
@@ -28,7 +29,7 @@ def read_settings(db: Session = Depends(get_db)) -> AppSettingsOut:
     )
 
 
-@router.put("", response_model=AppSettingsOut)
+@router.put("", response_model=AppSettingsOut, dependencies=[Depends(require_admin)])
 def update_settings(
     payload: AppSettingsIn, db: Session = Depends(get_db)
 ) -> AppSettingsOut:

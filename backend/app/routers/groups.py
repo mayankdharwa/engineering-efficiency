@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from ..auth import require_admin
 from ..database import get_db
 from ..group_colors import pick_default_color
 from ..models import Cycle, CycleMembership, MemberGroup
@@ -53,7 +54,12 @@ def list_groups(team_id: int, db: Session = Depends(get_db)) -> list[MemberGroup
     )
 
 
-@router.post("/{team_id}/groups", response_model=GroupOut, status_code=201)
+@router.post(
+    "/{team_id}/groups",
+    response_model=GroupOut,
+    status_code=201,
+    dependencies=[Depends(require_admin)],
+)
 def create_group(
     team_id: int, payload: GroupIn, db: Session = Depends(get_db)
 ) -> MemberGroup:
@@ -76,7 +82,11 @@ def create_group(
     return group
 
 
-@router.put("/{team_id}/groups/{group_id}", response_model=GroupOut)
+@router.put(
+    "/{team_id}/groups/{group_id}",
+    response_model=GroupOut,
+    dependencies=[Depends(require_admin)],
+)
 def update_group(
     team_id: int,
     group_id: int,
@@ -96,7 +106,11 @@ def update_group(
     return group
 
 
-@router.delete("/{team_id}/groups/{group_id}", status_code=204)
+@router.delete(
+    "/{team_id}/groups/{group_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin)],
+)
 def delete_group(
     team_id: int, group_id: int, db: Session = Depends(get_db)
 ) -> Response:

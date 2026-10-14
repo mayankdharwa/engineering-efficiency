@@ -53,6 +53,7 @@ def test_protected_api_and_docs_require_login() -> None:
             "authenticated": False,
             "setup_required": True,
             "username": None,
+            "role": None,
         }
 
         assert client.get("/api/teams").status_code == 401
@@ -73,15 +74,21 @@ def test_setup_creates_account_and_opens_the_app() -> None:
             json={"username": "Ada", "password": TEST_PASSWORD},
         )
         assert response.status_code == 200
-        assert response.json() == {"username": "ada"}
+        body = response.json()
+        assert body["username"] == "ada"
+        assert body["role"] == "admin"
+        assert isinstance(body["id"], int)
 
         status = client.get("/api/auth/status")
         assert status.json() == {
             "authenticated": True,
             "setup_required": False,
             "username": "ada",
+            "role": "admin",
         }
-        assert client.get("/api/auth/me").json() == {"username": "ada"}
+        me = client.get("/api/auth/me").json()
+        assert me["username"] == "ada"
+        assert me["role"] == "admin"
         assert client.get("/api/teams").status_code == 200
         assert client.get("/openapi.json").status_code == 200
         assert client.get("/docs").status_code == 200
