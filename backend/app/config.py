@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     frontend_dist: Path = BASE_DIR.parent / "frontend" / "dist"
     linear_api_url: str = "https://api.linear.app/graphql"
     cors_origins: list[str] = ["http://localhost:5173"]
+    # Signs the session cookie. When empty, a key is generated and persisted
+    # next to the SQLite file so logins survive process restarts.
+    secret_key: str = ""
+    # Set true when the app is served over HTTPS so the session cookie is
+    # marked Secure.
+    session_secure: bool = False
 
 
 settings = Settings()

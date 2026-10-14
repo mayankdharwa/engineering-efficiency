@@ -72,6 +72,20 @@ class LinearConfig(Base):
     )
 
 
+class User(Base):
+    """Local dashboard account. Created on first run; not included in export."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, default=utcnow, onupdate=utcnow
+    )
+
+
 class AppSettings(Base):
     """Singleton row (id == 1) holding app-wide metric preferences.
 

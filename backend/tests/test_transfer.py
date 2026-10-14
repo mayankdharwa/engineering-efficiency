@@ -28,6 +28,7 @@ from app.models import (
     TeamMember,
 )
 from app.transfer import decode_import_payload
+from tests.auth_helpers import authenticate
 
 SECRET_KEY = "lin_api_do_not_export_this_secret"
 
@@ -50,7 +51,9 @@ def _make_client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    return TestClient(app), testing_session
+    client = TestClient(app)
+    authenticate(client)
+    return client, testing_session
 
 
 def _seed(session_factory) -> None:
@@ -155,6 +158,9 @@ def test_export_omits_linear_key_and_nested_secrets() -> None:
     payload = decode_import_payload(response.content)
     assert payload["format"] == "engineering-efficiency-export"
     assert "linear_config" not in payload["tables"]
+    assert "users" not in payload["tables"]
+    assert b"password_hash" not in response.content
+    assert b"users" not in response.content
     assert payload["tables"]["teams"][0]["name"] == "Engineering"
     raw = payload["tables"]["issues"][0]["raw"]
     assert "apiKey" not in raw

@@ -9,13 +9,17 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from .auth import require_user
 from .config import settings
 from .database import init_db
+from .models import User
+from .routers import auth as auth_router
 from .routers import config as config_router
 from .routers import costs as costs_router
 from .routers import cycles as cycles_router
@@ -36,6 +40,9 @@ app = FastAPI(
     title="Engineering Efficiency API",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
@@ -46,19 +53,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(config_router.router, prefix="/api")
-app.include_router(settings_router.router, prefix="/api")
-app.include_router(teams_router.router, prefix="/api")
-app.include_router(cycles_router.router, prefix="/api")
-app.include_router(groups_router.router, prefix="/api")
-app.include_router(costs_router.router, prefix="/api")
-app.include_router(stats_router.router, prefix="/api")
-app.include_router(projects_router.router, prefix="/api")
+_protected = [Depends(require_user)]
+
+app.include_router(auth_router.router, prefix="/api")
+app.include_router(config_router.router, prefix="/api", dependencies=_protected)
+app.include_router(settings_router.router, prefix="/api", dependencies=_protected)
+app.include_router(teams_router.router, prefix="/api", dependencies=_protected)
+app.include_router(cycles_router.router, prefix="/api", dependencies=_protected)
+app.include_router(groups_router.router, prefix="/api", dependencies=_protected)
+app.include_router(costs_router.router, prefix="/api", dependencies=_protected)
+app.include_router(stats_router.router, prefix="/api", dependencies=_protected)
+app.include_router(projects_router.router, prefix="/api", dependencies=_protected)
 
 
 @app.get("/api/health", tags=["meta"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/openapi.json", include_in_schema=False)
+def openapi_spec(_user: User = Depends(require_user)) -> dict:
+    return app.openapi()
+
+
+@app.get("/docs", include_in_schema=False)
+def swagger_ui(_user: User = Depends(require_user)) -> HTMLResponse:
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} docs")
+
+
+@app.get("/redoc", include_in_schema=False)
+def redoc_ui(_user: User = Depends(require_user)) -> HTMLResponse:
+    return get_redoc_html(openapi_url="/openapi.json", title=f"{app.title} ReDoc")
 
 
 # ---------------------------------------------------------------------------

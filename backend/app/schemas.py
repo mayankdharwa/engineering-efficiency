@@ -32,6 +32,31 @@ class ConnectionTestOut(BaseModel):
     organization_name: str | None = None
 
 
+class AuthCredentialsIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        username = value.strip()
+        if not username:
+            raise ValueError("Username is required.")
+        if any(ch.isspace() for ch in username):
+            raise ValueError("Username cannot contain spaces.")
+        return username.lower()
+
+
+class AuthStatusOut(BaseModel):
+    authenticated: bool
+    setup_required: bool
+    username: str | None = None
+
+
+class UserOut(BaseModel):
+    username: str
+
+
 class AppSettingsOut(BaseModel):
     timezone: str
     day_cutoff_hour: int

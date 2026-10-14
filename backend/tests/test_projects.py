@@ -21,6 +21,7 @@ from app.projects import (
     project_schedule_health,
 )
 from app.sync import sync_team_projects
+from tests.auth_helpers import authenticate
 
 
 class _FakeProjectClient:
@@ -413,7 +414,9 @@ def _api_client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    return TestClient(app), testing_session
+    client = TestClient(app)
+    authenticate(client)
+    return client, testing_session
 
 
 def test_projects_endpoint_returns_cost_totals() -> None:

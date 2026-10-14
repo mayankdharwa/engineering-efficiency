@@ -81,6 +81,8 @@ preset is tracked in `frontend/components.json`; re-apply it with
 `pnpm dlx shadcn@latest apply --preset b6FTt6ua8`.
 
 FastAPI serves both the JSON API under `/api` and the built React SPA.
+Every page and API (except `/api/health` and the login endpoints) requires a
+session cookie. On first launch the app asks you to create an account.
 
 ## Repository layout
 
@@ -92,9 +94,10 @@ engineering-efficiency/
 │   ├── app/
 │   │   ├── main.py           # FastAPI app + SPA hosting
 │   │   ├── config.py         # settings (EE_* env vars)
+│   │   ├── auth.py           # password hashing + signed session cookies
 │   │   ├── app_settings.py   # working timezone / cutoff preferences
 │   │   ├── database.py       # SQLite engine / sessions / migrations
-│   │   ├── models.py         # LinearConfig, Team, Issue, Cycle, Project, ...
+│   │   ├── models.py         # User, LinearConfig, Team, Issue, Cycle, Project, ...
 │   │   ├── schemas.py        # Pydantic API schemas
 │   │   ├── linear_client.py  # Linear GraphQL client
 │   │   ├── metrics.py        # cycle efficiency metric computation
@@ -104,18 +107,18 @@ engineering-efficiency/
 │   │   ├── cycles.py         # cycle settings + membership snapshots
 │   │   ├── costs.py          # per-team currency / man-day cost
 │   │   ├── group_colors.py   # group colour palette + hex validation
-│   │   └── routers/          # config, settings, teams, cycles, groups, costs, stats, projects
+│   │   └── routers/          # auth, config, settings, teams, cycles, groups, costs, stats, projects
 │   ├── data/                 # SQLite database (gitignored)
 │   └── pyproject.toml
 └── frontend/
     ├── src/
     │   ├── api.ts            # typed API client
     │   ├── types.ts          # shared API types
-    │   ├── router.tsx        # TanStack Router routes (Cycles, Projects, Settings)
+    │   ├── router.tsx        # TanStack Router routes (login, Cycles, Projects, Settings)
     │   ├── index.css         # Tailwind v4 + shadcn theme tokens
     │   ├── lib/              # formatting, timezone, groups, project-state, table helpers
     │   ├── hooks/            # app settings + shared config team selection
-    │   ├── pages/            # DashboardPage (Cycles), ProjectsPage, ConfigLayout
+    │   ├── pages/            # LoginPage, DashboardPage (Cycles), ProjectsPage, ConfigLayout
     │   ├── components/       # charts, tables, settings panels, ...
     │   └── components/ui/    # shadcn/ui primitives
     ├── components.json       # shadcn configuration / preset
@@ -149,6 +152,8 @@ pnpm dev
 ```
 
 Open <http://localhost:5173>. Vite proxies `/api/*` to the backend on `:8000`.
+The first visit asks you to create a username and password; after that every
+page and API call requires that login.
 
 ## Running as a single server (production-style)
 
@@ -159,6 +164,7 @@ cd ../backend && uv sync && uv run uvicorn app.main:app --port 8000
 
 Open <http://localhost:8000>. FastAPI serves the built SPA from
 `frontend/dist`, with a fallback to `index.html` for client-side routes.
+Create an account on first launch if one does not already exist.
 
 ## Running with Docker
 
@@ -186,38 +192,41 @@ mounted at `/data`.
 
 ## Using the app
 
-1. Create a Linear **personal API key**: Linear → *Settings* → *Security & access*
+1. Open the app and **create an account** (first launch) or **sign in**. The
+   password is stored only in the local SQLite database as a hash. Import /
+   export never includes this account.
+2. Create a Linear **personal API key**: Linear → *Settings* → *Security & access*
    → *Personal API keys*.
-2. Open **Settings**, pick **Linear Setup** in the side panel, paste the key,
+3. Open **Settings**, pick **Linear Setup** in the side panel, paste the key,
    and click **Save & validate**. The key is stored only in your local SQLite
    database.
-3. Still in **Linear Setup**, click **Import teams** to fetch the team list. Teams
+4. Still in **Linear Setup**, click **Import teams** to fetch the team list. Teams
    that Linear reports as archived/deleted, or that have cycles disabled, are
    skipped. Then **Refresh** a team to download its **current cycle's** issues and
    membership into SQLite. Refreshing replaces the stored issues for that cycle,
    so only the active cycle is rewritten. **Delete** removes a team and all of
    its local data, including projects (Linear is untouched).
-4. In **Settings → Time Configuration**, set the **working timezone** and
+5. In **Settings → Time Configuration**, set the **working timezone** and
    the **hour after which the current day counts as elapsed** (default 7 PM). A
    day is only treated as elapsed once that local time has passed, so velocity
    isn't measured against a day that is still in progress.
-5. In **Settings → Cycle Configuration**, confirm the cycle dates pulled
+6. In **Settings → Cycle Configuration**, confirm the cycle dates pulled
    from Linear (or override them) and the number of working days if the cycle
    contains holidays. When Linear moves a team on to a new cycle, **Refresh** is
    blocked until its current cycle is finalized: use **Finalize Cycle** on this
    page to freeze it (the data is kept for history), then refresh the team to
    download its new cycle. Each team is finalized independently. Finalized cycle
    dates, working days and member snapshots are locked.
-6. In **Settings → Groups**, add as many **groups** as you need (e.g.
+7. In **Settings → Groups**, add as many **groups** as you need (e.g.
    Backend, Frontend, QA) and pick a colour for each. A group still referenced
    by a finalized cycle cannot be deleted.
-7. In **Settings → Team Configuration**, set the team's **Cost
+8. In **Settings → Team Configuration**, set the team's **Cost
    Configuration** (currency symbol — `€`, `$` or `₹` — and man-day cost), then
    under **Team Members** assign each person to one of those groups, untick
    anyone who shouldn't count toward capacity (non-developers, people not on
    this cycle), and set **unavailable days** (planned leave) for the current
    cycle. The next cycle copies groups and capacity; leave starts at zero.
-8. Open **Cycles**, pick a team and a **cycle** (defaults to the current one;
+9. Open **Cycles**, pick a team and a **cycle** (defaults to the current one;
    finalized cycles stay available for history). Use the **group filter** (All
    groups or any combination) at the top to scope the cards, charts and tables.
    Review the metric cards (**planning**, **velocity**, **bandwidth**, **adhoc
@@ -229,21 +238,21 @@ mounted at `/data`.
    column header to sort a table. Shared metric columns are bandwidth, velocity,
    available points, completed points, adhoc points and planning efficiency.
    Zero unavailable days and non-positive available points render as a dash.
-9. Open **Projects** and pick a team. **Refresh** downloads that team's Linear
+10. Open **Projects** and pick a team. **Refresh** downloads that team's Linear
    projects and their issues (a separate sync from cycle refresh; archived
    projects are not kept). Headline cards show project count, points and total
    cost. Filter by Linear project state (defaults to **started** and
    **completed**). The bar chart and table list cost, points and done points;
    select a row to inspect that project's issues (**Show done** defaults on).
    Canceled issues stay in the issue list but are excluded from points and cost.
-10. To share a local copy, open **Settings → Import / Export**. **Download
+11. To share a local copy, open **Settings → Import / Export**. **Download
     export** writes a zip containing a JSON snapshot of teams, cycles, issues,
-    groups, costs, projects and settings. The Linear API key (and any other
-    secrets) is never included. The other person imports that zip — or an
-    older unpacked `.json` file — on the same page. Their existing Linear key
-    is left alone, and they can save their own under **Linear Setup**. Import
-    replaces shareable local data. The file must match this app's schema
-    version (currently 4).
+    groups, costs, projects and settings. The Linear API key, login account,
+    and any other secrets are never included. The other person imports that
+    zip — or an older unpacked `.json` file — on the same page. Their existing
+    Linear key and login are left alone, and they can save their own key under
+    **Linear Setup**. Import replaces shareable local data. The file must match
+    this app's schema version (currently 4).
 
 > Cycle refresh downloads only the team's **active** Linear cycle. Earlier
 > finalized cycles stay stored and can be opened from the cycle picker. Each
@@ -257,7 +266,12 @@ mounted at `/data`.
 
 | Method | Path                        | Description                                  |
 | ------ | --------------------------- | -------------------------------------------- |
-| GET    | `/api/health`               | Liveness check                               |
+| GET    | `/api/health`               | Liveness check (unauthenticated)             |
+| GET    | `/api/auth/status`          | Whether setup or a login is required         |
+| POST   | `/api/auth/setup`           | Create the first account (only when none exist) |
+| POST   | `/api/auth/login`           | Sign in and set the session cookie           |
+| POST   | `/api/auth/logout`          | Clear the session cookie                     |
+| GET    | `/api/auth/me`              | The signed-in username                       |
 | GET    | `/api/config`               | Current Linear connection status             |
 | PUT    | `/api/config`               | Save + validate a Linear API key             |
 | POST   | `/api/config/test`          | Re-test the saved connection                 |
@@ -285,8 +299,10 @@ mounted at `/data`.
 | GET    | `/api/teams/{id}/projects`  | Stored projects with points, cost and nested issues |
 | POST   | `/api/teams/{id}/projects/refresh` | Download the team's Linear projects and their issues |
 
-Omitting `cycle_id` uses the team's current cycle. Interactive docs are
-available at `/docs` while the backend is running.
+Omitting `cycle_id` uses the team's current cycle. Every route except
+`/api/health` and the public `/api/auth/*` endpoints requires the session
+cookie from login. Interactive docs at `/docs` (and `/redoc`, `/openapi.json`)
+are also behind that login.
 
 ## Database
 
@@ -294,6 +310,8 @@ The SQLite file lives at `backend/data/engineering_efficiency.db` (gitignored).
 On startup the app creates missing tables and applies one-shot migrations up to
 schema version **4**. Tables:
 
+- `users` — the local login account (username + password hash). Created on first
+  launch. Not included in export.
 - `linear_config` — the saved API key and resolved viewer/org info (singleton).
   Not included in export.
 - `app_settings` — the working timezone and end-of-day cutoff used by the metrics
@@ -350,7 +368,9 @@ files are copied and there is no app-wide switch.
 
 Backend settings are overridable via `EE_`-prefixed environment variables (see
 `backend/.env.example`), e.g. `EE_DATABASE_URL`, `EE_FRONTEND_DIST`,
-`EE_LINEAR_API_URL`, `EE_CORS_ORIGINS`.
+`EE_LINEAR_API_URL`, `EE_CORS_ORIGINS`, `EE_SECRET_KEY`, `EE_SESSION_SECURE`.
+When `EE_SECRET_KEY` is unset, a signing key is written next to the SQLite
+file as `.session_secret`.
 
 Metric timing — the working timezone and the hour after which the current day
 counts as elapsed — is configured in the app under **Settings → Time
@@ -369,6 +389,6 @@ including the cycle start/end date pickers.
   to Linear.
 - **Import / Export** shares the local SQLite snapshot, not a live Linear
   connection. Downloads are a zip containing JSON; import accepts that zip or
-  a plain `.json` file. The Linear API key is never written into the file; the
-  importer keeps whatever key they already saved. Exports that do not match
-  schema version 4 are rejected.
+  a plain `.json` file. The Linear API key and login account are never written
+  into the file; the importer keeps whatever key and password they already
+  saved. Exports that do not match schema version 4 are rejected.

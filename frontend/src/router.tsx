@@ -5,6 +5,7 @@ import {
   Outlet,
   redirect,
 } from '@tanstack/react-router'
+import { Toaster } from '@/components/ui/toast'
 import { Layout } from './components/Layout'
 import { CycleConfigurationPanel } from './components/CycleConfigurationPanel'
 import { DataTransferPanel } from './components/DataTransferPanel'
@@ -12,11 +13,42 @@ import { GroupsPanel } from './components/GroupsPanel'
 import { LinearSetupPanel } from './components/LinearSetupPanel'
 import { TeamConfigurationPanel } from './components/TeamConfigurationPanel'
 import { TimeConfigurationPanel } from './components/TimeConfigurationPanel'
+import { api } from './api'
 import { ConfigLayout } from './pages/ConfigLayout'
 import { DashboardPage } from './pages/DashboardPage'
+import { LoginPage } from './pages/LoginPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 
 const rootRoute = createRootRoute({
+  component: () => (
+    <>
+      <Outlet />
+      <Toaster />
+    </>
+  ),
+})
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/login',
+  beforeLoad: async () => {
+    const status = await api.getAuthStatus()
+    if (status.authenticated) {
+      throw redirect({ to: '/' })
+    }
+  },
+  component: LoginPage,
+})
+
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: '_app',
+  beforeLoad: async () => {
+    const status = await api.getAuthStatus()
+    if (!status.authenticated) {
+      throw redirect({ to: '/login' })
+    }
+  },
   component: () => (
     <Layout>
       <Outlet />
@@ -25,19 +57,19 @@ const rootRoute = createRootRoute({
 })
 
 const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/',
   component: DashboardPage,
 })
 
 const projectsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/projects',
   component: ProjectsPage,
 })
 
 const configRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/config',
   component: ConfigLayout,
 })
@@ -87,16 +119,19 @@ const dataRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
-  indexRoute,
-  projectsRoute,
-  configRoute.addChildren([
-    configIndexRoute,
-    linearRoute,
-    timeRoute,
-    cycleRoute,
-    groupsRoute,
-    teamRoute,
-    dataRoute,
+  loginRoute,
+  appRoute.addChildren([
+    indexRoute,
+    projectsRoute,
+    configRoute.addChildren([
+      configIndexRoute,
+      linearRoute,
+      timeRoute,
+      cycleRoute,
+      groupsRoute,
+      teamRoute,
+      dataRoute,
+    ]),
   ]),
 ])
 

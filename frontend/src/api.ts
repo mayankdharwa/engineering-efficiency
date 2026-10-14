@@ -1,5 +1,6 @@
 import type {
   AppSettingsOut,
+  AuthStatusOut,
   ConnectionTestOut,
   CycleOut,
   CycleSettingsIn,
@@ -14,9 +15,16 @@ import type {
   TeamCostOut,
   TeamOut,
   TeamStatsOut,
+  UserOut,
 } from './types'
 
 const BASE = '/api'
+const PUBLIC_AUTH_PATHS = new Set([
+  '/auth/status',
+  '/auth/setup',
+  '/auth/login',
+  '/auth/logout',
+])
 
 async function readErrorDetail(response: Response): Promise<string> {
   let detail = response.statusText
@@ -29,11 +37,26 @@ async function readErrorDetail(response: Response): Promise<string> {
   return detail || `Request failed (${response.status})`
 }
 
+function redirectToLogin() {
+  if (window.location.pathname !== '/login') {
+    window.location.assign('/login')
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Content-Type') && init?.body) {
+    headers.set('Content-Type', 'application/json')
+  }
   const response = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers,
+    credentials: 'include',
   })
+
+  if (response.status === 401 && !PUBLIC_AUTH_PATHS.has(path)) {
+    redirectToLogin()
+  }
 
   if (!response.ok) {
     throw new Error(await readErrorDetail(response))
@@ -46,6 +69,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getAuthStatus: () => request<AuthStatusOut>('/auth/status'),
+  setupAccount: (username: string, password: string) =>
+    request<UserOut>('/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  login: (username: string, password: string) =>
+    request<UserOut>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
+
   getConfig: () => request<LinearConfigOut>('/config'),
   saveConfig: (apiKey: string) =>
     request<LinearConfigOut>('/config', {
@@ -140,7 +176,10 @@ export const api = {
     request<void>(`/teams/${teamId}/groups/${groupId}`, { method: 'DELETE' }),
 
   downloadExport: async () => {
-    const response = await fetch(`${BASE}/config/export`)
+    const response = await fetch(`${BASE}/config/export`, { credentials: 'include' })
+    if (response.status === 401) {
+      redirectToLogin()
+    }
     if (!response.ok) {
       throw new Error(await readErrorDetail(response))
     }
@@ -160,11 +199,15 @@ export const api = {
   importData: async (file: File) => {
     const response = await fetch(`${BASE}/config/import`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': file.type || 'application/octet-stream',
       },
       body: file,
     })
+    if (response.status === 401) {
+      redirectToLogin()
+    }
     if (!response.ok) {
       throw new Error(await readErrorDetail(response))
     }

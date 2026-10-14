@@ -41,8 +41,8 @@ EXPORT_JSON_NAME = "engineering-efficiency-export.json"
 MAX_IMPORT_UNCOMPRESSED = 50 * 1024 * 1024
 
 # Tables that must never appear in a snapshot (secrets or local bookkeeping).
-SECRET_TABLES = frozenset({"linear_config", "schema_version"})
-SECRET_COLUMNS = frozenset({"api_key"})
+SECRET_TABLES = frozenset({"linear_config", "schema_version", "users"})
+SECRET_COLUMNS = frozenset({"api_key", "password_hash"})
 SECRET_JSON_KEYS = frozenset(
     {
         "api_key",

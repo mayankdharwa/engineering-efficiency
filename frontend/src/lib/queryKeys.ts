@@ -14,6 +14,7 @@ function withOptionalCycle<TPrefix extends string>(
 }
 
 export const queryKeys = {
+  auth: ['auth'] as const,
   teams: ['teams'] as const,
   config: ['config'] as const,
   settings: APP_SETTINGS_QUERY_KEY,

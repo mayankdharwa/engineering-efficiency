@@ -1,6 +1,9 @@
-import { Link } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { Toaster } from '@/components/ui/toast'
+import { Button } from '@/components/ui/button'
+import { api } from '../api'
+import { queryKeys } from '../lib/queryKeys'
 
 const navBase =
   'rounded-md px-3 py-1.5 text-sm font-medium transition-colors'
@@ -8,6 +11,18 @@ const navIdle = `${navBase} text-muted-foreground hover:bg-muted hover:text-fore
 const navActive = `${navBase} bg-secondary text-secondary-foreground`
 
 export function Layout({ children }: { children: ReactNode }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const authQuery = useQuery({ queryKey: queryKeys.auth, queryFn: api.getAuthStatus })
+
+  const logout = useMutation({
+    mutationFn: api.logout,
+    onSuccess: async () => {
+      queryClient.clear()
+      await navigate({ to: '/login' })
+    },
+  })
+
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
@@ -16,26 +31,40 @@ export function Layout({ children }: { children: ReactNode }) {
             <span className="size-5 rounded-md bg-gradient-to-br from-primary to-amber-600" />
             Engineering Efficiency
           </Link>
-          <nav className="flex items-center gap-1">
-            <Link
-              to="/"
-              className={navIdle}
-              activeProps={{ className: navActive }}
-              activeOptions={{ exact: true }}
+          <div className="flex items-center gap-3">
+            <nav className="flex items-center gap-1">
+              <Link
+                to="/"
+                className={navIdle}
+                activeProps={{ className: navActive }}
+                activeOptions={{ exact: true }}
+              >
+                Cycles
+              </Link>
+              <Link to="/projects" className={navIdle} activeProps={{ className: navActive }}>
+                Projects
+              </Link>
+              <Link to="/config" className={navIdle} activeProps={{ className: navActive }}>
+                Settings
+              </Link>
+            </nav>
+            {authQuery.data?.username ? (
+              <span className="hidden text-sm text-muted-foreground sm:inline">
+                {authQuery.data.username}
+              </span>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
             >
-              Cycles
-            </Link>
-            <Link to="/projects" className={navIdle} activeProps={{ className: navActive }}>
-              Projects
-            </Link>
-            <Link to="/config" className={navIdle} activeProps={{ className: navActive }}>
-              Settings
-            </Link>
-          </nav>
+              Sign out
+            </Button>
+          </div>
         </div>
       </header>
       <main className="w-full flex-1 px-4 py-6 sm:px-6">{children}</main>
-      <Toaster />
     </div>
   )
 }

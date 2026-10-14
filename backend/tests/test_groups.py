@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, _migrate_member_roles_to_groups, get_db
 from app.main import app
 from app.models import Cycle, CycleMembership, Team, TeamMember
+from tests.auth_helpers import authenticate
 
 
 def _make_client():
@@ -32,7 +33,9 @@ def _make_client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    return TestClient(app), testing_session, engine
+    client = TestClient(app)
+    authenticate(client)
+    return client, testing_session, engine
 
 
 def _seed_team(session_factory) -> int:

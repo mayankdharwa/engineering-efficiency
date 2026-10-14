@@ -1,3 +1,13 @@
+export interface AuthStatusOut {
+  authenticated: boolean
+  setup_required: boolean
+  username: string | null
+}
+
+export interface UserOut {
+  username: string
+}
+
 export interface GroupOut {
   id: number
   name: string
