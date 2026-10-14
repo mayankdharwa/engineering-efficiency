@@ -24,12 +24,17 @@ Definitions (confirmed with product):
 Derived per member:
 
 * ``planning_efficiency`` = ``planned / taken`` (higher is better)
-* ``velocity``            = ``done / (progress * taken)``, where ``progress`` is
-  the fraction of the cycle's working days elapsed so far (0..1). A day only
-  counts once the configured end-of-day cutoff (in the configured timezone) has
-  passed, so the current day is not treated as elapsed while work is still
-  ongoing. At the end of the cycle this reduces to ``done / taken``; 100% means
-  on pace.
+* ``velocity``            = ``done / expected``, where per-person ``expected``
+  is ``POINTS_PER_DAY × min(elapsed, available days)``. Available days are
+  ``max(working_days - unavailable_days, 0)``. 100% means they finished 2
+  points for each day they should have been working. Taken is not in the
+  denominator: a light load pulls velocity down after the backlog is gone.
+  Team and group velocity use the same definition rolled up:
+  ``sum(done) / sum(expected)``. The cycle ``progress`` field is still
+  elapsed working days over ``working_days`` (calendar pace). A day only
+  counts once the configured end-of-day cutoff (in the configured timezone)
+  has passed. At the end of a person's available days this reduces to
+  ``done / capacity``; finishing all taken work then equals bandwidth.
 * ``bandwidth_efficiency``= ``taken / capacity``
 
 Team metrics are ratios of the team totals rather than sums of ratios.
@@ -155,6 +160,35 @@ def remaining_weekdays(
     return _count_weekdays(first, end)
 
 
+def _days_passed_fraction(
+    elapsed: float,
+    working_days: float,
+    available_days: float | None = None,
+) -> float:
+    """Days-passed fraction for velocity, clamped to ``[0, 1]``.
+
+    Team progress omits ``available_days`` and uses the cycle length. Per
+    person the denominator is available days, so
+    ``min(elapsed, available) / available`` — finishing their taken work in
+    their available time is 100%.
+    """
+    denominator = working_days if available_days is None else max(available_days, 0.0)
+    if denominator <= 0:
+        return 0.0
+    passed = min(max(elapsed, 0.0), denominator)
+    return max(0.0, min(passed / denominator, 1.0))
+
+
+def _available_days(working_days: float, unavailable: float) -> float:
+    return max(working_days - unavailable, 0.0)
+
+
+def _expected_points(elapsed: float, working_days: float, unavailable: float) -> float:
+    """Points a person should have finished: 2 per day they should have worked."""
+    available = _available_days(working_days, unavailable)
+    return POINTS_PER_DAY * min(max(elapsed, 0.0), available)
+
+
 def _progress_fraction(
     starts_at: datetime | None,
     working_days: float,
@@ -163,10 +197,8 @@ def _progress_fraction(
     cutoff_hour: int = DEFAULT_DAY_CUTOFF_HOUR,
 ) -> float:
     """Fraction of the cycle's working days elapsed, clamped to ``[0, 1]``."""
-    if working_days <= 0:
-        return 0.0
     elapsed = elapsed_working_days(starts_at, now, tz, cutoff_hour)
-    return max(0.0, min(elapsed / working_days, 1.0))
+    return _days_passed_fraction(elapsed, working_days)
 
 
 @dataclass
@@ -311,7 +343,8 @@ def compute_team_metrics(
     # number isn't penalised for the time that hasn't elapsed yet. The current
     # day only counts once the cutoff hour has passed.
     now = utcnow()
-    progress = _progress_fraction(cycle.starts_at, working_days, now, zone, cutoff_hour)
+    elapsed = elapsed_working_days(cycle.starts_at, now, zone, cutoff_hour)
+    progress = _days_passed_fraction(elapsed, working_days)
 
     ctx = load_team_cycle_data(db, team, cycle)
     issues = ctx.issues
@@ -380,7 +413,7 @@ def compute_team_metrics(
                 counts_toward_capacity=counts,
                 unavailable=snapshot.unavailable_days if snapshot is not None else 0.0,
                 working_days=working_days,
-                progress=progress,
+                elapsed=elapsed,
                 bucket=bucket,
                 capacity_points=None if counts else 0.0,
             )
@@ -398,7 +431,7 @@ def compute_team_metrics(
                 counts_toward_capacity=False,
                 unavailable=0.0,
                 working_days=working_days,
-                progress=progress,
+                elapsed=elapsed,
                 bucket=buckets[None],
                 capacity_points=0.0,
             )
@@ -427,6 +460,7 @@ def compute_team_metrics(
             now,
             zone,
             cutoff_hour,
+            {row.linear_id: max(working_days - row.unavailable_days, 0.0) for row in group},
         )
 
     # One row per defined group (in creation order), plus an "Unassigned" row
@@ -439,7 +473,8 @@ def compute_team_metrics(
                 group.id,
                 group.name,
                 members_in_group,
-                progress,
+                elapsed,
+                working_days,
                 _trend_for(members_in_group),
                 resolve_color(group.color),
             )
@@ -448,7 +483,13 @@ def compute_team_metrics(
     if ungrouped:
         group_rows.append(
             _build_group_metrics(
-                None, UNASSIGNED_LABEL, ungrouped, progress, _trend_for(ungrouped), None
+                None,
+                UNASSIGNED_LABEL,
+                ungrouped,
+                elapsed,
+                working_days,
+                _trend_for(ungrouped),
+                None,
             )
         )
 
@@ -460,6 +501,7 @@ def compute_team_metrics(
         now,
         zone,
         cutoff_hour,
+        {row.linear_id: max(working_days - row.unavailable_days, 0.0) for row in rows},
     )
     name_by_id = {row.linear_id: row.name for row in rows if row.linear_id is not None}
     group_by_id = {row.linear_id: row.group_id for row in rows if row.linear_id is not None}
@@ -492,7 +534,13 @@ def compute_team_metrics(
         total_capacity_points=total_capacity,
         unestimated_issues=sum(row.unestimated_count for row in rows),
         planning_efficiency=_ratio(total_planned, total_taken),
-        velocity=_ratio(total_done, progress * total_taken),
+        velocity=_ratio(
+            total_done,
+            sum(
+                _expected_points(elapsed, working_days, row.unavailable_days)
+                for row in rows
+            ),
+        ),
         bandwidth_efficiency=_ratio(total_taken, total_capacity),
         members=rows,
         groups=group_rows,
@@ -611,14 +659,15 @@ def _velocity_trend(
     now: datetime,
     tz: ZoneInfo,
     cutoff_hour: int,
+    available_by_assignee: dict[str | None, float] | None = None,
 ) -> list[VelocityTrendPoint]:
     """Velocity as it stood at the end of each elapsed working day.
 
     For every elapsed weekday from the cycle start (capped at the cycle end)
     this recomputes the velocity formula using the points completed *by* that
-    day and the points expected by that day (``progress × taken``). A day only
-    counts once the configured cutoff hour has passed, so the final point
-    matches the headline velocity for the same issue set.
+    day and the points expected by that day. Expected work uses each
+    assignee's available days when provided, matching headline velocity.
+    A day only counts once the configured cutoff hour has passed.
     """
     if starts_at is None or working_days <= 0:
         return []
@@ -630,12 +679,16 @@ def _velocity_trend(
     if last < start:
         return []
 
-    taken_total = sum(issue.estimate or 0.0 for issue in issues)
     completions = [
         (_to_local(issue.completed_at, tz).date(), issue.estimate or 0.0)
         for issue in issues
         if issue.is_completed and issue.completed_at is not None
     ]
+    if available_by_assignee is not None:
+        available_slots = list(available_by_assignee.values())
+    else:
+        assignees = {issue.assignee_linear_id for issue in issues}
+        available_slots = [working_days] * len(assignees)
 
     points: list[VelocityTrendPoint] = []
     elapsed = 0
@@ -643,9 +696,12 @@ def _velocity_trend(
     while cursor <= last:
         if cursor.weekday() < 5:
             elapsed += 1
-            progress = max(0.0, min(elapsed / working_days, 1.0))
+            progress = _days_passed_fraction(elapsed, working_days)
             done = sum(value for day, value in completions if day <= cursor)
-            expected = progress * taken_total
+            expected = sum(
+                POINTS_PER_DAY * min(elapsed, max(available, 0.0))
+                for available in available_slots
+            )
             points.append(
                 VelocityTrendPoint(
                     date=cursor.isoformat(),
@@ -663,7 +719,8 @@ def _build_group_metrics(
     group_id: int | None,
     label: str,
     group: list[MemberMetrics],
-    progress: float,
+    elapsed: float,
+    working_days: float,
     velocity_trend: list[VelocityTrendPoint] | None = None,
     color: str | None = None,
 ) -> GroupMetrics:
@@ -673,6 +730,9 @@ def _build_group_metrics(
     adhoc = sum(row.adhoc_points for row in group)
     planned = sum(row.planned_points for row in group)
     capacity = sum(row.capacity_points for row in group)
+    expected = sum(
+        _expected_points(elapsed, working_days, row.unavailable_days) for row in group
+    )
     return GroupMetrics(
         group_id=group_id,
         label=label,
@@ -685,7 +745,7 @@ def _build_group_metrics(
         planned_points=planned,
         unestimated_count=sum(row.unestimated_count for row in group),
         planning_efficiency=_ratio(planned, taken),
-        velocity=_ratio(done, progress * taken),
+        velocity=_ratio(done, expected),
         bandwidth_efficiency=_ratio(taken, capacity),
         velocity_trend=velocity_trend or [],
     )
@@ -702,13 +762,15 @@ def _build_member_metrics(
     counts_toward_capacity: bool = True,
     unavailable: float,
     working_days: float,
-    progress: float = 1.0,
+    elapsed: float = 0.0,
     bucket: _AssigneeIssueTotals,
     capacity_points: float | None = None,
 ) -> MemberMetrics:
+    available_days = _available_days(working_days, unavailable)
     if capacity_points is None:
-        capacity_points = max(working_days - unavailable, 0.0) * POINTS_PER_DAY
+        capacity_points = available_days * POINTS_PER_DAY
     planned = bucket.taken - bucket.adhoc
+    expected = _expected_points(elapsed, working_days, unavailable)
     return MemberMetrics(
         linear_id=linear_id,
         name=name,
@@ -725,6 +787,6 @@ def _build_member_metrics(
         planned_points=planned,
         unestimated_count=bucket.unestimated,
         planning_efficiency=_ratio(planned, bucket.taken),
-        velocity=_ratio(bucket.done, progress * bucket.taken),
+        velocity=_ratio(bucket.done, expected),
         bandwidth_efficiency=_ratio(bucket.taken, capacity_points),
     )

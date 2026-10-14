@@ -67,6 +67,21 @@ export function parseIsoDate(
 
 const MS_PER_DAY = 86_400_000
 
+/** Calendar dates of `targetDate` and today in `timeZone`, or ``null``. */
+function dueAndToday(
+  targetDate: string,
+  timeZone: string,
+  now: Date,
+): { dueUtc: number; todayUtc: number } | null {
+  const due = parseIsoDate(targetDate)
+  const today = parseIsoDate(isoDateInTimeZone(now.toISOString(), timeZone))
+  if (!due || !today) return null
+  return {
+    dueUtc: Date.UTC(due.year, due.month - 1, due.day),
+    todayUtc: Date.UTC(today.year, today.month - 1, today.day),
+  }
+}
+
 /** Weekdays after today in `timeZone` through `targetDate` (Mon–Fri).
 
 Overdue dates return ``null``. A due date of today returns ``0``.
@@ -76,11 +91,9 @@ export function weekdaysUntil(
   timeZone: string,
   now: Date = new Date(),
 ): number | null {
-  const due = parseIsoDate(targetDate)
-  const today = parseIsoDate(isoDateInTimeZone(now.toISOString(), timeZone))
-  if (!due || !today) return null
-  const dueUtc = Date.UTC(due.year, due.month - 1, due.day)
-  const todayUtc = Date.UTC(today.year, today.month - 1, today.day)
+  const bounds = dueAndToday(targetDate, timeZone, now)
+  if (!bounds) return null
+  const { dueUtc, todayUtc } = bounds
   if (dueUtc < todayUtc) return null
   let days = 0
   for (let cursor = todayUtc + MS_PER_DAY; cursor <= dueUtc; cursor += MS_PER_DAY) {
@@ -88,6 +101,22 @@ export function weekdaysUntil(
     if (weekday !== 0 && weekday !== 6) days += 1
   }
   return days
+}
+
+/** Calendar days `targetDate` is past today in `timeZone`.
+
+A due date of today or later returns ``null``.
+ */
+export function calendarDaysLate(
+  targetDate: string,
+  timeZone: string,
+  now: Date = new Date(),
+): number | null {
+  const bounds = dueAndToday(targetDate, timeZone, now)
+  if (!bounds) return null
+  const { dueUtc, todayUtc } = bounds
+  if (todayUtc <= dueUtc) return null
+  return Math.round((todayUtc - dueUtc) / MS_PER_DAY)
 }
 
 /** Convert a `YYYY-MM-DD` value (local midnight in `timeZone`) to a UTC ISO string. */

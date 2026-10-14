@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.metrics import (
+    POINTS_PER_DAY,
     _adhoc_by_day,
+    _days_passed_fraction,
+    _expected_points,
     _is_adhoc,
     _progress_fraction,
     _velocity_trend,
@@ -102,6 +105,25 @@ def test_remaining_weekdays_negative_offset_timezone() -> None:
     assert remaining_weekdays(date(2026, 10, 16), now, LOS_ANGELES, CUTOFF) == 1.0
 
 
+def test_days_passed_fraction_uses_available_days_per_person() -> None:
+    # Team progress stays elapsed / working days.
+    assert _days_passed_fraction(8.0, 10.0) == 0.8
+    # 8 days elapsed, 7 available → their personal cycle is fully elapsed.
+    assert _days_passed_fraction(8.0, 10.0, 7.0) == 1.0
+    assert _days_passed_fraction(5.0, 10.0, 7.0) == 5.0 / 7.0
+    assert _days_passed_fraction(8.0, 10.0, 0.0) == 0.0
+    assert _days_passed_fraction(8.0, 0.0, 0.0) == 0.0
+
+
+def test_expected_points_is_two_per_day_they_should_have_worked() -> None:
+    # 8 elapsed, no leave → 16 points due.
+    assert _expected_points(8.0, 10.0, 0.0) == POINTS_PER_DAY * 8.0
+    # 8 elapsed, 3 leave (7 available) → cap at 7 days × 2.
+    assert _expected_points(8.0, 10.0, 3.0) == POINTS_PER_DAY * 7.0
+    assert _expected_points(5.0, 10.0, 3.0) == POINTS_PER_DAY * 5.0
+    assert _expected_points(8.0, 10.0, 10.0) == 0.0
+
+
 def test_progress_fraction_is_zero_until_first_cutoff() -> None:
     start = datetime(2026, 10, 5, 0, 0, tzinfo=UTC)
     now = datetime(2026, 10, 5, 11, 30, tzinfo=UTC)
@@ -145,6 +167,7 @@ def test_velocity_trend_stops_at_last_elapsed_day() -> None:
     assert [point.date for point in trend] == ["2026-10-05", "2026-10-06"]
     assert trend[-1].progress == 0.2
     assert trend[-1].done_points == 2.0
+    assert trend[-1].expected_points == POINTS_PER_DAY * 2.0
     # The final point matches the headline progress for the same period.
     assert trend[-1].progress == _progress_fraction(start, 10.0, before, UTC_ZONE, CUTOFF)
 
@@ -153,6 +176,7 @@ def test_velocity_trend_stops_at_last_elapsed_day() -> None:
     assert [point.date for point in trend] == ["2026-10-05", "2026-10-06", "2026-10-07"]
     assert trend[-1].progress == 0.3
     assert trend[-1].done_points == 4.0
+    assert trend[-1].expected_points == POINTS_PER_DAY * 3.0
 
 
 def test_cycle_calendar_dates_are_half_open_in_timezone() -> None:
@@ -401,4 +425,82 @@ def test_compute_team_metrics_adhoc_by_day(monkeypatch) -> None:
         assert [
             (row.date, row.assignee, row.points) for row in metrics.adhoc_by_day
         ] == [("2026-10-06", "ada.l", 2.0)]
+
+
+def test_member_velocity_caps_days_passed_at_available_days(monkeypatch) -> None:
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
+        db.add(team)
+        db.flush()
+        start = datetime(2026, 10, 5, 0, 0, tzinfo=UTC)
+        end = datetime(2026, 10, 19, 0, 0, tzinfo=UTC)
+        cycle = Cycle(
+            team_id=team.id,
+            linear_id="c1",
+            starts_at=start,
+            ends_at=end,
+            working_days=10,
+        )
+        db.add(cycle)
+        db.flush()
+        team.current_cycle_id = cycle.id
+        ada = TeamMember(team_id=team.id, linear_id="u1", name="Ada", display_name="ada")
+        grace = TeamMember(
+            team_id=team.id, linear_id="u2", name="Grace", display_name="grace"
+        )
+        db.add_all([ada, grace])
+        db.flush()
+        db.add_all(
+            [
+                CycleMembership(
+                    team_id=team.id,
+                    cycle_id=cycle.id,
+                    member_id=ada.id,
+                    member_linear_id="u1",
+                    unavailable_days=0.0,
+                ),
+                CycleMembership(
+                    team_id=team.id,
+                    cycle_id=cycle.id,
+                    member_id=grace.id,
+                    member_linear_id="u2",
+                    unavailable_days=3.0,
+                ),
+            ]
+        )
+        for linear_id, issue_id in (("u1", "i-ada"), ("u2", "i-grace")):
+            db.add(
+                Issue(
+                    linear_id=issue_id,
+                    team_id=team.id,
+                    identifier=issue_id.upper(),
+                    title="Work",
+                    estimate=10.0,
+                    state_type="completed",
+                    cycle_id=cycle.id,
+                    assignee_linear_id=linear_id,
+                    assignee_name=linear_id,
+                    completed_at=datetime(2026, 10, 13, 12, 0, tzinfo=UTC),
+                )
+            )
+        db.add(AppSettings(id=1, timezone="UTC", day_cutoff_hour=19))
+        db.commit()
+
+        # Wednesday 2026-10-14 after cutoff: 8 weekdays elapsed (Mon 5 – Wed 14).
+        monkeypatch.setattr(
+            "app.metrics.utcnow", lambda: datetime(2026, 10, 14, 19, 30, tzinfo=UTC)
+        )
+        metrics = compute_team_metrics(db, team)
+        assert metrics.progress == 0.8
+        by_id = {row.linear_id: row for row in metrics.members}
+        # Ada: 8 days × 2 pts expected, 10 done.
+        assert by_id["u1"].velocity == 10.0 / (POINTS_PER_DAY * 8.0)
+        # Grace: 3 leave days (7 available); min(8, 7) × 2 expected.
+        assert by_id["u2"].velocity == 10.0 / (POINTS_PER_DAY * 7.0)
+        # Team rolls up the same expected points: 16 + 14.
+        assert metrics.velocity == 20.0 / 30.0
+        assert metrics.velocity_trend[-1].velocity == metrics.velocity
 

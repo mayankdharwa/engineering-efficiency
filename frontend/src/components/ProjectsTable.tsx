@@ -18,7 +18,7 @@ import {
 import { useTimezone } from '../hooks/useAppSettings'
 import { DEFAULT_POINTS_PER_DAY } from '../lib/capacity'
 import { formatCalendarDate, formatMoney, formatPercent, formatPoints } from '../lib/format'
-import { weekdaysUntil } from '../lib/timezone'
+import { calendarDaysLate, weekdaysUntil } from '../lib/timezone'
 import { badgeVariantForState } from '../lib/issueState'
 import {
   formatProjectHealth,
@@ -60,6 +60,13 @@ function dueDateSortValue(project: ProjectOut): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(project.target_date.trim())
   if (!match) return Number.POSITIVE_INFINITY
   return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+}
+
+/** Displayed Done percent; missing totals sort last. */
+function doneSortValue(project: ProjectOut): number | undefined {
+  const ratio = doneRatio(project.done_points, project.points)
+  if (ratio === null || Number.isNaN(ratio)) return undefined
+  return Number((ratio * 100).toFixed(DONE_PERCENT_DIGITS))
 }
 
 function isProjectSettled(project: ProjectOut): boolean {
@@ -140,10 +147,24 @@ function ProjectDueDateCell({
     )
   }
   const formattedDate = formatCalendarDate(targetDate)
+  const chipClass =
+    'inline-flex h-5 cursor-default items-center rounded-4xl px-2 text-xs font-medium'
+  const daysLate = calendarDaysLate(targetDate, timezone)
+  if (daysLate !== null) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          delay={200}
+          className={`${chipClass} bg-red-800 text-white dark:bg-red-900 dark:text-red-50`}
+        >
+          {daysLate} {daysLate === 1 ? 'day' : 'days'} late
+        </TooltipTrigger>
+        <TooltipContent>{formattedDate}</TooltipContent>
+      </Tooltip>
+    )
+  }
   const daysAway = weekdaysUntil(targetDate, timezone)
   if (daysAway !== null && daysAway < 7) {
-    const chipClass =
-      'inline-flex h-5 cursor-default items-center rounded-4xl px-2 text-xs font-medium'
     if (daysAway === 0) {
       return (
         <Tooltip>
@@ -310,11 +331,13 @@ function createColumns(
       header: 'Points',
       cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
     }),
-    helper.accessor('done_points', {
+    helper.accessor((row) => doneSortValue(row), {
+      id: 'done_points',
       header: 'Done',
+      sortUndefined: 'last',
       cell: (ctx) => (
         <ProjectDoneCell
-          done={ctx.getValue()}
+          done={ctx.row.original.done_points}
           total={ctx.row.original.points}
           state={ctx.row.original.state}
         />

@@ -62,15 +62,31 @@ function ratio(numerator: number, denominator: number): number | null {
   return denominator > 0 ? numerator / denominator : null
 }
 
+/** Expected done points: 2 per day the member should have been working. */
+function memberExpectedPoints(
+  member: MemberMetricsOut,
+  workingDays: number,
+  elapsed: number,
+  pointsPerDay: number,
+): number {
+  const available = Math.max(workingDays - member.unavailable_days, 0)
+  if (available <= 0) return 0
+  return pointsPerDay * Math.min(Math.max(elapsed, 0), available)
+}
+
 /**
  * Combine several groups' precomputed totals into a single team-style summary
- * (ratios of summed totals, matching the backend's aggregation). The velocity
- * trend is summed per day so it lines up with the combined headline velocity.
+ * (ratios of summed totals, matching the backend's aggregation). Velocity uses
+ * each member's time-based expected points. The trend is summed per day
+ * so it lines up with the combined headline velocity.
  */
 export function combineGroups(
   groups: GroupMetricsOut[],
   selected: Set<string>,
-  progress: number,
+  members: MemberMetricsOut[],
+  workingDays: number,
+  elapsed: number,
+  pointsPerDay: number,
 ): GroupSummary {
   const chosen = selectGroups(groups, selected)
   const total = (pick: (group: GroupMetricsOut) => number) =>
@@ -82,6 +98,10 @@ export function combineGroups(
   const capacity = total((group) => group.capacity_points)
   const adhoc = total((group) => group.adhoc_points)
   const unestimated = total((group) => group.unestimated_count)
+  const expected = filterMembers(members, selected).reduce(
+    (sum, member) => sum + memberExpectedPoints(member, workingDays, elapsed, pointsPerDay),
+    0,
+  )
 
   const trendByDate = new Map<
     string,
@@ -111,7 +131,7 @@ export function combineGroups(
 
   return {
     planning: ratio(planned, taken),
-    velocity: progress > 0 ? ratio(done, progress * taken) : null,
+    velocity: ratio(done, expected),
     bandwidth: ratio(taken, capacity),
     planned,
     taken,

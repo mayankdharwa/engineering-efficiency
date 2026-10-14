@@ -81,7 +81,14 @@ export function buildDashboardView(
   const workingDays = stats?.working_days ?? 0
   const groupSummary =
     stats && !isAllGroups(selectedGroups)
-      ? combineGroups(stats.groups, selectedGroups, stats.progress)
+      ? combineGroups(
+          stats.groups,
+          selectedGroups,
+          stats.members,
+          stats.working_days,
+          stats.progress * stats.working_days,
+          pointsPerDay,
+        )
       : null
 
   const summary: DashboardHeadline = groupSummary

@@ -27,16 +27,21 @@ The app has three top-level pages: **Cycles**, **Projects**, and **Settings**.
 - **Planning efficiency** = `planned ÷ taken`, where *planned* is work attached to
   the cycle **on or before its first day**. Work attached after the first day is
   **adhoc**.
-- **Velocity** = `done ÷ (progress × taken)`, where `progress` is the fraction of
-  the cycle's working days elapsed so far (only `completed` states count as
-  done). The current day only counts once the configured end-of-day cutoff has
-  passed in the configured working timezone, so a partial day is not treated as
-  elapsed. At cycle end this reduces to `done ÷ taken`; 100% means on pace.
+- **Velocity** = `done ÷ expected`. Per person, `expected` is
+  `2 × min(days till today, available days)`, where available days are
+  `working_days − unavailable_days` (only `completed` states count as done).
+  100% means they finished 2 points for each day they should have been working.
+  Taken is not in the denominator, so a light load pulls velocity down once
+  the backlog is gone. Team and group velocity use the same definition rolled
+  up: `sum(done) ÷ sum(expected)`. The cycle elapsed % on the dashboard is
+  still calendar progress through `working_days`. The current day only counts
+  once the configured end-of-day cutoff has passed in the configured working
+  timezone. At the end of a person's available days this reduces to
+  `done ÷ capacity`; finishing all taken work then equals bandwidth.
 - The **velocity trend** plots the same metric at the end of each elapsed working
-  day: cumulative points done ÷ **fractional points**, where fractional points =
-  `(taken ÷ working_days) × passed_days`. Days only appear once their cutoff has
-  passed, so the last point equals the headline velocity. It is returned per
-  team and per group.
+  day: cumulative points done ÷ `2 × min(elapsed, available days)` per person.
+  Days only appear once their cutoff has passed, so the last point equals the
+  headline velocity. It is returned per team and per group.
 - **Bandwidth efficiency** = `taken ÷ capacity`.
 - **Available points** = leftover capacity (`capacity − taken`). Shown as points
   plus an approximate day count (`points ÷ 2`).
