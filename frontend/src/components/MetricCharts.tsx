@@ -108,8 +108,8 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
       marks: [
         barX(rows, { x: 'value', y: 'member', fill: COLOR_TAKEN }),
         ruleX([1]),
-        // Dotted 85% threshold reference.
-        ruleX([0.85], { stroke: COLOR_CAPACITY, strokeDasharray: '2 3' }),
+        // Dotted 90% threshold reference.
+        ruleX([0.9], { stroke: COLOR_CAPACITY, strokeDasharray: '2 3' }),
         text(overflow, {
           x: () => TRUNCATED_VELOCITY,
           y: 'member',
