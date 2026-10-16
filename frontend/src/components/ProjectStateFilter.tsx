@@ -19,6 +19,7 @@ const STATE_OPTIONS = [...PROJECT_STATES, EXCLUDED_PROJECT_STATE, UNKNOWN_PROJEC
 interface ProjectStateFilterProps {
   selected: Set<string>
   onChange: (next: Set<string>) => void
+  id?: string
 }
 
 /**
@@ -26,7 +27,11 @@ interface ProjectStateFilterProps {
  * the "All states" item shows as selected in that case and clears the filter
  * when chosen from a specific selection.
  */
-export function ProjectStateFilter({ selected, onChange }: ProjectStateFilterProps) {
+export function ProjectStateFilter({
+  selected,
+  onChange,
+  id = 'project-state-filter',
+}: ProjectStateFilterProps) {
   const allActive = isAllProjectStates(selected)
   const items = [
     { label: 'All states', value: ALL_PROJECT_STATES_KEY },
@@ -47,7 +52,7 @@ export function ProjectStateFilter({ selected, onChange }: ProjectStateFilterPro
 
   return (
     <Select multiple items={items} value={value} onValueChange={handleChange}>
-      <SelectTrigger id="project-state-filter" className="w-full" aria-label="State">
+      <SelectTrigger id={id} className="w-full" aria-label="State">
         <SelectValue>
           {(current) => {
             const keys = Array.isArray(current)

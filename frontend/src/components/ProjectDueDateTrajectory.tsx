@@ -6,6 +6,7 @@ import { tooltip } from '@tanstack/charts/tooltip'
 import { useMemo } from 'react'
 import { useTimezone } from '../hooks/useAppSettings'
 import { formatCalendarDate, formatDateTime } from '../lib/format'
+import { projectStateKey } from '../lib/projectState'
 import type { ProjectDueDateChangeOut, ProjectOut } from '../types'
 
 const COLOR_OPEN_FILL = 'var(--card)'
@@ -14,6 +15,9 @@ const COLOR_OPEN_STROKE = 'var(--foreground)'
 const COLOR_PLAN = 'var(--trajectory-plan)'
 /** Same amber as the warning tone in the projects table. */
 const COLOR_SHIFT = 'var(--trajectory-shift)'
+/** Same emerald as the completed check in the projects table. */
+const COLOR_COMPLETE = 'var(--trajectory-complete)'
+const CHECK_OFFSET = 16
 const MS_PER_DAY = 86_400_000
 const NAME_MAX = 28
 
@@ -27,7 +31,7 @@ interface ChartDatum {
 interface DateStop extends ChartDatum {
   at: number
   date: string
-  role: 'start' | 'first' | 'middle' | 'current'
+  role: 'start' | 'first' | 'middle' | 'current' | 'check'
   index: number
   count: number
   changedAt: string | null
@@ -97,7 +101,9 @@ function dueDates(history: ProjectDueDateChangeOut[]): { date: string; changedAt
   return dates
 }
 
-function trajectoryFor(project: ProjectOut): { stops: DateStop[]; segments: Segment[] } | null {
+function trajectoryFor(
+  project: ProjectOut,
+): { stops: DateStop[]; segments: Segment[]; checks: DateStop[] } | null {
   const dates = dueDates(project.due_date_history)
   const dueStops = dates.flatMap((item) => {
     const at = calendarMs(item.date)
@@ -175,7 +181,13 @@ function trajectoryFor(project: ProjectOut): { stops: DateStop[]; segments: Segm
     })
   }
 
-  return { stops, segments }
+  const current = stops.find((stop) => stop.role === 'current')
+  const checks: DateStop[] =
+    current && projectStateKey(project.state) === 'completed'
+      ? [{ ...current, role: 'check', step: 'Completed' }]
+      : []
+
+  return { stops, segments, checks }
 }
 
 function isSegment(datum: DateStop | Segment): datum is Segment {
@@ -209,17 +221,19 @@ function TrajectoryTooltip({
   return (
     <div className="flex max-w-xs flex-col gap-0.5 text-sm">
       <p className="font-medium">{datum.name}</p>
-      <p className="tabular-nums">
-        {formatCalendarDate(datum.date)}
-        {datum.role === 'start' ? null : (
-          <span className="text-muted-foreground">
-            {' '}
-            · {datum.index} of {datum.count}
-          </span>
-        )}
-      </p>
+      {datum.role === 'check' ? null : (
+        <p className="tabular-nums">
+          {formatCalendarDate(datum.date)}
+          {datum.role === 'start' ? null : (
+            <span className="text-muted-foreground">
+              {' '}
+              · {datum.index} of {datum.count}
+            </span>
+          )}
+        </p>
+      )}
       <p className="text-muted-foreground">{datum.step}</p>
-      {datum.changedAt ? (
+      {datum.role !== 'check' && datum.changedAt ? (
         <p className="text-muted-foreground">{formatDateTime(datum.changedAt, timeZone)}</p>
       ) : null}
       {datum.chain.includes('→') ? <p className="tabular-nums">{datum.chain}</p> : null}
@@ -245,6 +259,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
     () => stops.filter((stop) => stop.role === 'first' || stop.role === 'middle'),
     [stops],
   )
+  const checks = useMemo(() => series.flatMap((item) => item.checks), [series])
   const endpointMarks = useMemo(
     () =>
       stops.flatMap((stop) => {
@@ -312,6 +327,15 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
           fontSize: 11,
           fontWeight: 600,
         }),
+        text(checks, {
+          x: 'at',
+          y: 'key',
+          text: () => '✓',
+          dx: CHECK_OFFSET,
+          fill: COLOR_COMPLETE,
+          fontSize: 13,
+          fontWeight: 600,
+        }),
       ],
       scales: {
         x: {
@@ -324,7 +348,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
           axis: { ticks: { format: (value) => labels.get(String(value)) ?? String(value) } },
         },
       },
-      margin: { left: 168, right: 16, top: 8, bottom: 36 },
+      margin: { left: 168, right: 28, top: 8, bottom: 36 },
       // The default ring is filled with the chart background and uses the
       // point fill as its stroke, which hides an open dot on hover.
       focusRing: {
@@ -345,7 +369,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
         ],
       },
     })
-  }, [endpointMarks, openDots, planSegments, shiftSegments, stops])
+  }, [checks, endpointMarks, openDots, planSegments, shiftSegments, stops])
 
   if (projects.length === 0) {
     return (

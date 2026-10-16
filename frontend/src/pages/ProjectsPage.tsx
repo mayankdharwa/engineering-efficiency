@@ -60,6 +60,9 @@ export function ProjectsPage() {
   const [selectedStates, setSelectedStates] = useState<Set<string>>(
     () => new Set(DEFAULT_PROJECT_STATES),
   )
+  const [trajectoryStates, setTrajectoryStates] = useState<Set<string>>(
+    () => new Set(DEFAULT_PROJECT_STATES),
+  )
   const [showDone, setShowDone] = useState(true)
 
   const teamsQuery = useQuery({ queryKey: queryKeys.teams, queryFn: api.listTeams })
@@ -83,6 +86,10 @@ export function ProjectsPage() {
   const chartProjects = useMemo(
     () => visibleProjects.filter((project) => !project.excluded),
     [visibleProjects],
+  )
+  const trajectoryProjects = useMemo(
+    () => filterProjectsByState(projects, trajectoryStates),
+    [projects, trajectoryStates],
   )
   const selectedProject =
     visibleProjects.find((project) => project.id === selectedProjectId) ?? null
@@ -271,11 +278,20 @@ export function ProjectsPage() {
                     Each bar runs from the start date to the due dates. Green is the
                     start through the first due date, and amber is each later change.
                     S is the start, D is the current due date, and open dots are
-                    earlier due dates.
+                    earlier due dates. A check beside D means the project is completed.
                   </CardDescription>
+                  <CardAction>
+                    <div className="w-52">
+                      <ProjectStateFilter
+                        id="trajectory-state-filter"
+                        selected={trajectoryStates}
+                        onChange={setTrajectoryStates}
+                      />
+                    </div>
+                  </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <ProjectDueDateTrajectory projects={visibleProjects} />
+                  <ProjectDueDateTrajectory projects={trajectoryProjects} />
                 </CardContent>
               </Card>
 
