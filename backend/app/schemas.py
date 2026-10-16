@@ -330,6 +330,13 @@ class ProjectIssueOut(BaseModel):
     completed_at: datetime | None = None
 
 
+class ProjectDueDateChangeOut(BaseModel):
+    changed_at: datetime
+    from_date: str | None = None
+    to_date: str | None = None
+    from_activity: bool = True
+
+
 class ProjectOut(BaseModel):
     id: int
     linear_id: str
@@ -353,6 +360,7 @@ class ProjectOut(BaseModel):
     health: str | None = None
     expected_done_points: float | None = None
     working_days_left: float | None = None
+    due_date_history: list[ProjectDueDateChangeOut] = []
     issues: list[ProjectIssueOut] = []
 
 

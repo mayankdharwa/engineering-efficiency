@@ -230,6 +230,13 @@ export interface ProjectIssueOut {
   completed_at: string | null
 }
 
+export interface ProjectDueDateChangeOut {
+  changed_at: string
+  from_date: string | null
+  to_date: string | null
+  from_activity: boolean
+}
+
 export interface ProjectOut {
   id: number
   linear_id: string
@@ -253,6 +260,7 @@ export interface ProjectOut {
   health: 'on_track' | 'lagging' | 'ahead' | null
   expected_done_points: number | null
   working_days_left: number | null
+  due_date_history: ProjectDueDateChangeOut[]
   issues: ProjectIssueOut[]
 }
 

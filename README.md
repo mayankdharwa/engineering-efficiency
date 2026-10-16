@@ -254,6 +254,10 @@ mounted at `/data`.
    **completed**). The bar chart and table list cost, points and done points;
    select a row to inspect that project's issues (**Show done** defaults on).
    Canceled issues stay in the issue list but are excluded from points and cost.
+   A separate **Due date trajectory** chart shows each project's start date and
+   every due date it has had. Green runs from the start to the first due date,
+   and amber marks each later due-date change, using the project's Linear
+   activity log.
 11. To share a local copy, open **Settings → Import / Export**. **Download
     export** writes a zip containing a JSON snapshot of teams, cycles, issues,
     groups, costs, projects and settings. The Linear API key, login account,
@@ -261,7 +265,7 @@ mounted at `/data`.
     zip — or an older unpacked `.json` file — on the same page. Their existing
     Linear key and login are left alone, and they can save their own key under
     **Linear Setup**. Import replaces shareable local data. The file must match
-    this app's schema version (currently 4).
+    this app's schema version (currently 5).
 
 > Cycle refresh downloads only the team's **active** Linear cycle. Earlier
 > finalized cycles stay stored and can be opened from the cycle picker. Each
@@ -309,7 +313,7 @@ mounted at `/data`.
 | GET    | `/api/teams/{id}/cost`      | A team's currency symbol and man-day cost    |
 | PUT    | `/api/teams/{id}/cost`      | Update a team's currency symbol and man-day cost |
 | GET    | `/api/teams/{id}/stats`     | Computed efficiency metrics (`?cycle_id=` to pick a cycle) |
-| GET    | `/api/teams/{id}/projects`  | Stored projects with points, cost and nested issues |
+| GET    | `/api/teams/{id}/projects`  | Stored projects with points, cost, due-date history and nested issues |
 | POST   | `/api/teams/{id}/projects/refresh` | Download the team's Linear projects and their issues |
 
 Omitting `cycle_id` uses the team's current cycle. Every route except
@@ -322,7 +326,7 @@ user management also require the **admin** role. Interactive docs at `/docs`
 
 The SQLite file lives at `backend/data/engineering_efficiency.db` (gitignored).
 On startup the app creates missing tables and applies one-shot migrations up to
-schema version **4**. Tables:
+schema version **5**. Tables:
 
 - `users` — local login accounts (username, password hash, `admin` or `reader`
   role). The first account is an admin. Not included in export.
@@ -349,6 +353,8 @@ schema version **4**. Tables:
   of cycles.
 - `project_issues` — the current issue snapshot on each project. Separate from
   cycle `issues` so a project refresh never rewrites cycle history.
+- `project_due_date_changes` — target-date changes from each project's Linear
+  activity log. Replaced on project refresh.
 - `sync_runs` — audit log of every import/refresh (`teams`, `issues`, or
   `projects`).
 - `schema_version` — records the applied local schema version. Not included in
@@ -405,4 +411,4 @@ including the cycle start/end date pickers.
   connection. Downloads are a zip containing JSON; import accepts that zip or
   a plain `.json` file. The Linear API key and login account are never written
   into the file; the importer keeps whatever key and password they already
-  saved. Exports that do not match schema version 4 are rejected.
+  saved. Exports that do not match schema version 5 are rejected.

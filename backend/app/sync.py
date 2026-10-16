@@ -18,6 +18,7 @@ from .models import (
     Issue,
     LinearConfig,
     Project,
+    ProjectDueDateChange,
     ProjectIssue,
     SyncKind,
     SyncRun,
@@ -26,6 +27,7 @@ from .models import (
     TeamMember,
     utcnow,
 )
+from .project_history import target_date_changes
 
 
 @dataclass
@@ -454,6 +456,67 @@ def _build_project_issue(team: Team, project: Project, remote: dict[str, Any]) -
     )
 
 
+def _history_nodes(
+    client: LinearClient, project_linear_id: str, history: Any
+) -> list[dict[str, Any]]:
+    """Read every activity page, following the cursor when the first page is full."""
+    payload = history or {}
+    nodes = [node for node in (payload.get("nodes") or []) if isinstance(node, dict)]
+    page = payload.get("pageInfo") or {}
+    after = page.get("endCursor")
+    seen_cursors: set[str] = set()
+    while page.get("hasNextPage"):
+        if not after or after in seen_cursors:
+            break
+        seen_cursors.add(after)
+        fetch = getattr(client, "project_history", None)
+        if fetch is None:
+            break
+        payload = fetch(project_linear_id, after) or {}
+        nodes.extend(node for node in (payload.get("nodes") or []) if isinstance(node, dict))
+        page = payload.get("pageInfo") or {}
+        after = page.get("endCursor")
+    return nodes
+
+
+def _replace_due_date_history(
+    db: Session,
+    client: LinearClient,
+    team: Team,
+    project: Project,
+    remote: dict[str, Any],
+) -> None:
+    """Replace one project's stored due-date changes with the activity log."""
+    db.execute(
+        delete(ProjectDueDateChange).where(ProjectDueDateChange.project_id == project.id)
+    )
+    for node in _history_nodes(client, project.linear_id, remote.get("history")):
+        fallback_at = parse_dt(node.get("createdAt")) or parse_dt(node.get("updatedAt"))
+        history_id = node.get("id")
+        if not history_id:
+            continue
+        entries = node.get("entries")
+        changes = target_date_changes(entries)
+        if fallback_at is None and all(change.changed_at is None for change in changes):
+            continue
+        for index, change in enumerate(changes):
+            changed_at = change.changed_at or fallback_at
+            if changed_at is None:
+                continue
+            linear_id = str(history_id) if index == 0 else f"{history_id}:{index}"
+            db.add(
+                ProjectDueDateChange(
+                    team_id=team.id,
+                    project_id=project.id,
+                    linear_id=linear_id,
+                    changed_at=changed_at,
+                    from_date=change.from_date,
+                    to_date=change.to_date,
+                    raw=entries if isinstance(entries, dict) else {"entries": entries},
+                )
+            )
+
+
 def sync_team_projects(db: Session, client: LinearClient, team: Team) -> ProjectSyncSummary:
     """Download the team's Linear projects and their issues.
 
@@ -504,6 +567,14 @@ def sync_team_projects(db: Session, client: LinearClient, team: Team) -> Project
             continue
         db.add(_build_project_issue(team, project_row, remote))
         stored += 1
+
+    for remote in remote_projects:
+        if _is_archived(remote) or "history" not in remote:
+            continue
+        project_row = existing.get(remote.get("id"))
+        if project_row is None:
+            continue
+        _replace_due_date_history(db, client, team, project_row, remote)
 
     for linear_id, row in list(existing.items()):
         if linear_id not in seen_ids:

@@ -27,6 +27,7 @@ from .models import (
     Issue,
     MemberGroup,
     Project,
+    ProjectDueDateChange,
     ProjectIssue,
     SyncRun,
     Team,
@@ -70,6 +71,7 @@ EXPORT_MODELS = (
     CycleMembership,
     Project,
     ProjectIssue,
+    ProjectDueDateChange,
     SyncRun,
 )
 TABLE_NAMES = tuple(model.__tablename__ for model in EXPORT_MODELS)

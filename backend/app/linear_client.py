@@ -76,11 +76,7 @@ query TeamCurrentCycleIssues($teamId: String!, $after: String) {
 }
 """
 
-TEAM_PROJECTS_QUERY = """
-query TeamProjects($teamId: String!, $after: String) {
-  team(id: $teamId) {
-    projects(first: 100, after: $after, includeArchived: false) {
-      nodes {
+_PROJECT_NODE_FIELDS = """
         id
         name
         state
@@ -89,7 +85,47 @@ query TeamProjects($teamId: String!, $after: String) {
         completedAt
         canceledAt
         archivedAt
-      }
+"""
+
+_PROJECT_HISTORY_FIELDS = """
+        history(first: 50, includeArchived: true) {
+          nodes { id createdAt entries }
+          pageInfo { hasNextPage endCursor }
+        }
+"""
+
+TEAM_PROJECTS_QUERY = f"""
+query TeamProjects($teamId: String!, $after: String) {{
+  team(id: $teamId) {{
+    projects(first: 50, after: $after, includeArchived: false) {{
+      nodes {{
+{_PROJECT_NODE_FIELDS}
+{_PROJECT_HISTORY_FIELDS}
+      }}
+      pageInfo {{ hasNextPage endCursor }}
+    }}
+  }}
+}}
+"""
+
+TEAM_PROJECTS_WITHOUT_HISTORY_QUERY = f"""
+query TeamProjectsWithoutHistory($teamId: String!, $after: String) {{
+  team(id: $teamId) {{
+    projects(first: 100, after: $after, includeArchived: false) {{
+      nodes {{
+{_PROJECT_NODE_FIELDS}
+      }}
+      pageInfo {{ hasNextPage endCursor }}
+    }}
+  }}
+}}
+"""
+
+PROJECT_HISTORY_QUERY = """
+query ProjectHistory($projectId: String!, $after: String) {
+  project(id: $projectId) {
+    history(first: 50, after: $after, includeArchived: true) {
+      nodes { id createdAt entries }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -250,11 +286,43 @@ class LinearClient:
             after = page.get("endCursor")
 
     def team_projects(self, team_linear_id: str) -> list[dict[str, Any]]:
-        """Return the team's active (non-archived) Linear projects."""
+        """Return the team's active projects, including due-date activity.
+
+        History is nested in the project query. When Linear rejects that query
+        as too complex, projects are loaded first and each history connection
+        is fetched on its own.
+        """
+        try:
+            return self._team_project_pages(team_linear_id, TEAM_PROJECTS_QUERY)
+        except LinearError as exc:
+            if not _is_complexity_error(exc):
+                raise
+        projects = self._team_project_pages(
+            team_linear_id, TEAM_PROJECTS_WITHOUT_HISTORY_QUERY
+        )
+        for project in projects:
+            project_id = project.get("id")
+            if not project_id:
+                continue
+            project["history"] = self.project_history(project_id, None)
+        return projects
+
+    def project_history(
+        self, project_linear_id: str, after: str | None = None
+    ) -> dict[str, Any]:
+        """Return one page of a project's activity log."""
+        data = self._post(
+            PROJECT_HISTORY_QUERY,
+            {"projectId": project_linear_id, "after": after},
+        )
+        project = data.get("project") or {}
+        return project.get("history") or {}
+
+    def _team_project_pages(self, team_linear_id: str, query: str) -> list[dict[str, Any]]:
         projects: list[dict[str, Any]] = []
         after: str | None = None
         while True:
-            data = self._post(TEAM_PROJECTS_QUERY, {"teamId": team_linear_id, "after": after})
+            data = self._post(query, {"teamId": team_linear_id, "after": after})
             team = data.get("team") or {}
             connection = team.get("projects") or {}
             projects.extend(connection.get("nodes") or [])
@@ -278,3 +346,8 @@ class LinearClient:
             if not page.get("hasNextPage"):
                 return issues
             after = page.get("endCursor")
+
+
+def _is_complexity_error(exc: LinearError) -> bool:
+    """True when Linear rejected a query for exceeding its complexity budget."""
+    return "complex" in str(exc).lower()

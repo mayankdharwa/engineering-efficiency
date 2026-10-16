@@ -28,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base, IntegerPK, UTCDateTime
 
 # Incremented when a one-shot data migration is required. See ``init_db``.
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 def utcnow() -> datetime:
@@ -305,6 +305,9 @@ class Project(Base):
     issues: Mapped[list[ProjectIssue]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+    due_date_changes: Mapped[list[ProjectDueDateChange]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class ProjectIssue(Base):
@@ -350,6 +353,40 @@ class ProjectIssue(Base):
     @property
     def is_canceled(self) -> bool:
         return self.state_type == "canceled" or self.canceled_at is not None
+
+
+class ProjectDueDateChange(Base):
+    """One target-date change from a Linear project's activity log.
+
+    ``from_date`` and ``to_date`` are calendar dates (``YYYY-MM-DD``). A null
+    ``to_date`` means the due date was cleared. ``raw`` keeps the history
+    entry so a later parser can recover changes the current one skipped.
+    """
+
+    __tablename__ = "project_due_date_changes"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "linear_id",
+            name="uq_project_due_date_changes_project_linear",
+        ),
+        Index("ix_project_due_date_changes_team_id_project_id", "team_id", "project_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    linear_id: Mapped[str] = mapped_column(String(128))
+    changed_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    from_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    raw: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    project: Mapped[Project] = relationship(back_populates="due_date_changes")
 
 
 class TeamCost(Base):

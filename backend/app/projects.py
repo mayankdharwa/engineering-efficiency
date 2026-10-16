@@ -26,7 +26,13 @@ from sqlalchemy.orm import Session
 from .app_settings import get_app_settings
 from .costs import get_team_cost
 from .metrics import POINTS_PER_DAY, remaining_weekdays
-from .models import Project, ProjectIssue, Team, utcnow
+from .models import Project, ProjectDueDateChange, ProjectIssue, Team, utcnow
+from .project_history import (
+    DueDatePoint,
+    build_due_date_trajectory,
+    calendar_date,
+    target_date_changes,
+)
 
 HEALTH_ON_TRACK = "on_track"
 HEALTH_LAGGING = "lagging"
@@ -71,6 +77,7 @@ class ProjectCostView:
     health: str | None
     expected_done_points: float | None
     working_days_left: float | None
+    due_date_history: list[DueDatePoint] = field(default_factory=list)
     issues: list[ProjectIssueView] = field(default_factory=list)
 
 
@@ -148,6 +155,34 @@ def _issue_view(issue: ProjectIssue) -> ProjectIssueView:
     )
 
 
+def _activity_changes(
+    rows: list[ProjectDueDateChange],
+) -> list[tuple[datetime, str | None, str | None]]:
+    """Prefer each event's own timestamp when the stored payload has one.
+
+    One Linear history record can contain every target-date change, and each
+    event carries its own ``at``. Rows saved before that time was stored share
+    a single ``changed_at``, so the payload is read again here.
+    """
+    collected: list[tuple[datetime, str | None, str | None]] = []
+    seen: list[object] = []
+    for row in rows:
+        raw = row.raw or {}
+        if any(raw == previous for previous in seen):
+            continue
+        seen.append(raw)
+        for change in target_date_changes(raw):
+            if change.changed_at is None:
+                continue
+            collected.append((change.changed_at, change.from_date, change.to_date))
+    if collected:
+        return collected
+    return [
+        (row.changed_at, calendar_date(row.from_date), calendar_date(row.to_date))
+        for row in rows
+    ]
+
+
 def compute_team_project_costs(
     db: Session, team: Team, *, now: datetime | None = None
 ) -> list[ProjectCostView]:
@@ -167,6 +202,16 @@ def compute_team_project_costs(
         select(ProjectIssue).where(ProjectIssue.team_id == team.id)
     ).all():
         issues_by_project.setdefault(issue.project_id, []).append(issue)
+    stored_changes: dict[int, list[ProjectDueDateChange]] = {}
+    for change in db.scalars(
+        select(ProjectDueDateChange)
+        .where(ProjectDueDateChange.team_id == team.id)
+        .order_by(ProjectDueDateChange.id)
+    ).all():
+        stored_changes.setdefault(change.project_id, []).append(change)
+    changes_by_project = {
+        project_id: _activity_changes(rows) for project_id, rows in stored_changes.items()
+    }
 
     views: list[ProjectCostView] = []
     for project in projects:
@@ -216,6 +261,12 @@ def compute_team_project_costs(
                 health=health,
                 expected_done_points=expected_done_points,
                 working_days_left=working_days_left,
+                due_date_history=build_due_date_trajectory(
+                    changes_by_project.get(project.id, []),
+                    target_date=project.target_date,
+                    initial_observed_at=project.created_at,
+                    current_observed_at=project.last_synced_at,
+                ),
                 issues=[_issue_view(issue) for issue in issues],
             )
         )

@@ -22,6 +22,7 @@ from app.models import (
     LinearConfig,
     MemberGroup,
     Project,
+    ProjectDueDateChange,
     ProjectIssue,
     Team,
     TeamCost,
@@ -133,6 +134,18 @@ def _seed(session_factory) -> None:
                 estimate=4.0,
             )
         )
+        db.add(
+            ProjectDueDateChange(
+                id=1,
+                team_id=team.id,
+                project_id=project.id,
+                linear_id="h1",
+                changed_at=datetime(2026, 3, 1, tzinfo=UTC),
+                from_date="2026-04-01",
+                to_date="2026-05-01",
+                raw={"targetDate": {"from": "2026-04-01", "to": "2026-05-01"}},
+            )
+        )
         db.commit()
 
 
@@ -224,6 +237,9 @@ def test_import_replaces_shareable_data_and_keeps_local_key() -> None:
         project_issue = db.get(ProjectIssue, 1)
         assert project_issue is not None
         assert project_issue.estimate == 4.0
+        change = db.get(ProjectDueDateChange, 1)
+        assert change is not None
+        assert change.to_date == "2026-05-01"
 
 
 def test_import_round_trip_preserves_shareable_tables() -> None:

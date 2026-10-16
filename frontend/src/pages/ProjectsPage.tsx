@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch'
 import { api } from '../api'
 import { IssuesTable } from '../components/IssuesTable'
 import { ProjectCostChart } from '../components/ProjectCostChart'
+import { ProjectDueDateTrajectory } from '../components/ProjectDueDateTrajectory'
 import { ProjectStateFilter } from '../components/ProjectStateFilter'
 import { ProjectsTable } from '../components/ProjectsTable'
 import { TeamPicker } from '../components/TeamPicker'
@@ -260,6 +261,20 @@ export function ProjectsPage() {
                         : undefined
                     }
                   />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Due date trajectory</CardTitle>
+                  <CardDescription>
+                    Each bar runs from the start date to the due dates. Green is the
+                    start through the first due date, and amber is each later change.
+                    Open dots are earlier due dates, and the filled dot is the current one.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ProjectDueDateTrajectory projects={visibleProjects} />
                 </CardContent>
               </Card>
 

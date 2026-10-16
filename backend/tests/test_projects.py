@@ -11,8 +11,23 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
+from app.linear_client import (
+    PROJECT_HISTORY_QUERY,
+    TEAM_PROJECTS_QUERY,
+    LinearClient,
+    LinearError,
+)
 from app.main import app
-from app.models import AppSettings, Cycle, Issue, Project, ProjectIssue, Team, TeamCost
+from app.models import (
+    AppSettings,
+    Cycle,
+    Issue,
+    Project,
+    ProjectDueDateChange,
+    ProjectIssue,
+    Team,
+    TeamCost,
+)
 from app.projects import (
     HEALTH_AHEAD,
     HEALTH_LAGGING,
@@ -642,3 +657,219 @@ def test_project_health_follows_app_timezone_and_cutoff() -> None:
         early_cutoff = compute_team_project_costs(db, team, now=now)[0]
         assert early_cutoff.working_days_left == 2.0
         assert early_cutoff.expected_done_points == 6.0
+
+
+def test_sync_stores_due_date_changes_and_replaces_them() -> None:
+    with _session() as db:
+        team = _add_team(db)
+        client = _FakeProjectClient(
+            [
+                {
+                    "id": "p1",
+                    "name": "Alpha",
+                    "state": "started",
+                    "targetDate": "2026-05-01",
+                    "history": {
+                        "nodes": [
+                            {
+                                "id": "h1",
+                                "createdAt": "2026-02-01T00:00:00.000Z",
+                                "entries": {
+                                    "targetDate": {"from": "2026-03-01", "to": "2026-04-01"},
+                                    "state": {"from": "planned", "to": "started"},
+                                },
+                            },
+                            {
+                                "id": "h-noise",
+                                "createdAt": "2026-02-02T00:00:00.000Z",
+                                "entries": {"name": {"from": "Old", "to": "Alpha"}},
+                            },
+                        ],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    },
+                }
+            ],
+            [],
+        )
+        sync_team_projects(db, client, team)
+        stored = list(db.scalars(select(ProjectDueDateChange)).all())
+        assert [(row.from_date, row.to_date) for row in stored] == [("2026-03-01", "2026-04-01")]
+
+        client = _FakeProjectClient(
+            [
+                {
+                    "id": "p1",
+                    "name": "Alpha",
+                    "targetDate": None,
+                    "history": {
+                        "nodes": [
+                            {
+                                "id": "h2",
+                                "createdAt": "2026-04-01T00:00:00.000Z",
+                                "entries": {
+                                    "type": "targetDate",
+                                    "from": "2026-04-01",
+                                    "to": None,
+                                },
+                            }
+                        ],
+                        "pageInfo": {"hasNextPage": False},
+                    },
+                }
+            ],
+            [],
+        )
+        sync_team_projects(db, client, team)
+        replaced = list(db.scalars(select(ProjectDueDateChange)).all())
+        assert len(replaced) == 1
+        assert replaced[0].linear_id == "h2"
+        assert replaced[0].from_date == "2026-04-01"
+        assert replaced[0].to_date is None
+
+
+def test_sync_follows_due_date_history_pages() -> None:
+    class _PagingClient(_FakeProjectClient):
+        def project_history(self, project_id: str, after: str | None) -> dict:
+            assert project_id == "p1"
+            assert after == "cursor-1"
+            return {
+                "nodes": [
+                    {
+                        "id": "h2",
+                        "createdAt": "2026-03-01T00:00:00.000Z",
+                        "entries": [
+                            {
+                                "type": "targetDate",
+                                "from": "2026-04-01",
+                                "to": "2026-05-01",
+                            }
+                        ],
+                    }
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+
+    with _session() as db:
+        team = _add_team(db)
+        client = _PagingClient(
+            [
+                {
+                    "id": "p1",
+                    "name": "Alpha",
+                    "targetDate": "2026-05-01",
+                    "history": {
+                        "nodes": [
+                            {
+                                "id": "h1",
+                                "createdAt": "2026-01-15T00:00:00.000Z",
+                                "entries": '{"targetDate":["2026-02-01","2026-04-01"]}',
+                            }
+                        ],
+                        "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
+                    },
+                }
+            ],
+            [],
+        )
+        sync_team_projects(db, client, team)
+        stored = list(
+            db.scalars(
+                select(ProjectDueDateChange).order_by(ProjectDueDateChange.changed_at)
+            ).all()
+        )
+        assert [(row.from_date, row.to_date) for row in stored] == [
+            ("2026-02-01", "2026-04-01"),
+            ("2026-04-01", "2026-05-01"),
+        ]
+
+
+def test_project_trajectory_uses_activity_then_current_date() -> None:
+    with _session() as db:
+        team = _add_team(db)
+        project = Project(
+            team_id=team.id,
+            linear_id="p1",
+            name="Alpha",
+            target_date="2026-06-01",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            last_synced_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+        untouched = Project(
+            team_id=team.id,
+            linear_id="p2",
+            name="Beta",
+            target_date="2026-07-01",
+            created_at=datetime(2026, 2, 1, tzinfo=UTC),
+        )
+        db.add_all([project, untouched])
+        db.flush()
+        db.add(
+            ProjectDueDateChange(
+                team_id=team.id,
+                project_id=project.id,
+                linear_id="h1",
+                changed_at=datetime(2026, 3, 1, tzinfo=UTC),
+                from_date="2026-04-01",
+                to_date="2026-05-01",
+                raw={"targetDate": {"from": "2026-04-01", "to": "2026-05-01"}},
+            )
+        )
+        db.commit()
+
+        views = {view.name: view for view in compute_team_project_costs(db, team)}
+        alpha = views["Alpha"].due_date_history
+        assert [(point.from_date, point.to_date, point.from_activity) for point in alpha] == [
+            ("2026-04-01", "2026-05-01", True),
+            ("2026-05-01", "2026-06-01", False),
+        ]
+        beta = views["Beta"].due_date_history
+        assert len(beta) == 1
+        assert beta[0].to_date == "2026-07-01"
+        assert beta[0].from_activity is False
+        assert beta[0].changed_at == datetime(2026, 2, 1, tzinfo=UTC)
+
+
+def test_team_projects_fetches_history_separately_when_query_is_too_complex() -> None:
+    client = LinearClient("test-key")
+    calls: list[str] = []
+
+    def _post(query: str, _variables: dict) -> dict:
+        calls.append(query)
+        if query == TEAM_PROJECTS_QUERY:
+            raise LinearError("Query too complex")
+        if query == PROJECT_HISTORY_QUERY:
+            return {
+                "project": {
+                    "history": {
+                        "nodes": [
+                            {
+                                "id": "h1",
+                                "createdAt": "2026-01-01T00:00:00.000Z",
+                                "entries": {
+                                    "targetDate": {"from": None, "to": "2026-02-01"}
+                                },
+                            }
+                        ],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                }
+            }
+        return {
+            "team": {
+                "projects": {
+                    "nodes": [{"id": "p1", "name": "Alpha"}],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+
+    client._post = _post  # type: ignore[method-assign]
+    try:
+        projects = client.team_projects("team-1")
+    finally:
+        client.close()
+
+    assert [project["id"] for project in projects] == ["p1"]
+    assert projects[0]["history"]["nodes"][0]["id"] == "h1"
+    assert calls[0] == TEAM_PROJECTS_QUERY
+    assert PROJECT_HISTORY_QUERY in calls
