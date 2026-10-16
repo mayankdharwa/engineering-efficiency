@@ -1,4 +1,4 @@
-import { defineChart, dot, link } from '@tanstack/charts'
+import { defineChart, dot, link, text } from '@tanstack/charts'
 import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
@@ -8,7 +8,6 @@ import { useTimezone } from '../hooks/useAppSettings'
 import { formatCalendarDate, formatDateTime } from '../lib/format'
 import type { ProjectDueDateChangeOut, ProjectOut } from '../types'
 
-const COLOR_CURRENT = 'var(--primary)'
 const COLOR_OPEN_FILL = 'var(--card)'
 const COLOR_OPEN_STROKE = 'var(--foreground)'
 /** Same emerald as the completed tone in the projects table. */
@@ -242,12 +241,19 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
   const segments = useMemo(() => series.flatMap((item) => item.segments), [series])
   const planSegments = useMemo(() => segments.filter((segment) => segment.kind === 'plan'), [segments])
   const shiftSegments = useMemo(() => segments.filter((segment) => segment.kind === 'shift'), [segments])
-  const startDots = useMemo(() => stops.filter((stop) => stop.role === 'start'), [stops])
   const openDots = useMemo(
     () => stops.filter((stop) => stop.role === 'first' || stop.role === 'middle'),
     [stops],
   )
-  const currentDots = useMemo(() => stops.filter((stop) => stop.role === 'current'), [stops])
+  const endpointMarks = useMemo(
+    () =>
+      stops.flatMap((stop) => {
+        if (stop.role === 'start') return [{ ...stop, letter: 'S' }]
+        if (stop.role === 'current') return [{ ...stop, letter: 'D' }]
+        return []
+      }),
+    [stops],
+  )
 
   const definition = useMemo(() => {
     if (stops.length === 0) return null
@@ -284,14 +290,6 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
           strokeWidth: 2,
           lineCap: 'butt',
         }),
-        dot(startDots, {
-          x: 'at',
-          y: 'key',
-          r: 4.5,
-          fill: COLOR_PLAN,
-          stroke: COLOR_OPEN_FILL,
-          strokeWidth: 1.5,
-        }),
         dot(openDots, {
           x: 'at',
           y: 'key',
@@ -300,13 +298,19 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
           stroke: COLOR_OPEN_STROKE,
           strokeWidth: 2,
         }),
-        dot(currentDots, {
+        dot(endpointMarks, {
           x: 'at',
           y: 'key',
-          r: 5.5,
-          fill: COLOR_CURRENT,
-          stroke: COLOR_OPEN_FILL,
-          strokeWidth: 1,
+          r: 7,
+          fill: COLOR_OPEN_FILL,
+        }),
+        text(endpointMarks, {
+          x: 'at',
+          y: 'key',
+          text: 'letter',
+          fill: COLOR_OPEN_STROKE,
+          fontSize: 11,
+          fontWeight: 600,
         }),
       ],
       scales: {
@@ -341,7 +345,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
         ],
       },
     })
-  }, [currentDots, openDots, planSegments, shiftSegments, startDots, stops])
+  }, [endpointMarks, openDots, planSegments, shiftSegments, stops])
 
   if (projects.length === 0) {
     return (

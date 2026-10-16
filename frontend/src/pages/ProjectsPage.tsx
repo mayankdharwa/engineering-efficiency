@@ -270,7 +270,8 @@ export function ProjectsPage() {
                   <CardDescription>
                     Each bar runs from the start date to the due dates. Green is the
                     start through the first due date, and amber is each later change.
-                    Open dots are earlier due dates, and the filled dot is the current one.
+                    S is the start, D is the current due date, and open dots are
+                    earlier due dates.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
