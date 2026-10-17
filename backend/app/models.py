@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -295,7 +296,7 @@ class Project(Base):
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     # Local exclusion flag; Linear refresh never overwrites this.
-    excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime, default=utcnow, onupdate=utcnow

@@ -2,10 +2,11 @@
 
 A small, local dashboard for engineering-team efficiency metrics sourced from
 [Linear](https://linear.app). Data is downloaded from the Linear API and stored
-in a local SQLite database; the dashboard reads only from that database.
+in a database (SQLite by default, or Postgres such as Supabase); the dashboard
+reads only from that database.
 
-**Scope:** Linear download, SQLite storage, per-team refresh and delete, fluid
-member groups, cycle history, computed cycle metrics (planning efficiency,
+**Scope:** Linear download, SQLite/Postgres storage, per-team refresh and delete,
+fluid member groups, cycle history, computed cycle metrics (planning efficiency,
 velocity, velocity trend, bandwidth, available points, adhoc and unutilized
 cost), a **Projects** view with point/cost totals, and TanStack Charts
 visualisations.
@@ -78,7 +79,7 @@ In the group and per-person tables:
 
 | Layer     | Choice                                                                 |
 | --------- | ---------------------------------------------------------------------- |
-| Backend   | Python 3.11+, FastAPI, SQLAlchemy 2.0, SQLite, httpx (Linear GraphQL)  |
+| Backend   | Python 3.11+, FastAPI, SQLAlchemy 2.0, SQLite / Postgres (psycopg), httpx (Linear GraphQL) |
 | Frontend  | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, TanStack Router / Query / Table / Charts |
 | Packaging | `uv` (Python), `pnpm` (Node)                                           |
 
@@ -105,7 +106,7 @@ engineering-efficiency/
 │   │   ├── config.py         # settings (EE_* env vars)
 │   │   ├── auth.py           # password hashing + signed session cookies
 │   │   ├── app_settings.py   # working timezone / cutoff preferences
-│   │   ├── database.py       # SQLite engine / sessions / migrations
+│   │   ├── database.py       # engine / sessions / cross-dialect migrations
 │   │   ├── models.py         # User, LinearConfig, Team, Issue, Cycle, Project, ...
 │   │   ├── schemas.py        # Pydantic API schemas
 │   │   ├── linear_client.py  # Linear GraphQL client
@@ -326,9 +327,11 @@ user management also require the **admin** role. Interactive docs at `/docs`
 
 ## Database
 
-The SQLite file lives at `backend/data/engineering_efficiency.db` (gitignored).
-On startup the app creates missing tables and applies one-shot migrations up to
-schema version **5**. Tables:
+Database access goes through SQLAlchemy, so the app runs on SQLite (the default)
+or Postgres. The SQLite file lives at `backend/data/engineering_efficiency.db`
+(gitignored). On startup the app creates missing tables and backfills newly added
+columns; legacy SQLite databases are also migrated up to schema version **5**.
+Tables:
 
 - `users` — local login accounts (username, password hash, `admin` or `reader`
   role). The first account is an admin. Not included in export.
@@ -367,6 +370,31 @@ schema version **5**. Tables:
 > preserved across refreshes; members no longer returned by Linear are dropped.
 > Project refresh replaces that team's project snapshot only.
 
+### Using Postgres / Supabase
+
+Postgres works without code changes — point `EE_DATABASE_URL` at a Postgres
+connection string and the bundled `psycopg` driver is used:
+
+```sh
+EE_DATABASE_URL="postgresql://postgres.<ref>:<password>@<host>:5432/postgres"
+```
+
+In Supabase, copy this from **Project Settings → Database → Connection string**.
+A bare `postgresql://` (or the legacy `postgres://`) URL is rewritten to
+`postgresql+psycopg://` automatically; an explicit driver suffix is left as-is.
+
+- Use the **Session pooler** (port 5432) for a long-running server. The
+  **Transaction pooler** (port 6543) is detected and switched to `NullPool` with
+  prepared statements disabled, since PgBouncer reuses backends per transaction.
+- Connect as the `postgres` role from the connection string: it owns the tables
+  and bypasses row-level security. Do not expose the connection string.
+- Set `EE_SECRET_KEY` when the database is remote — otherwise the session-signing
+  key is written to a local file that does not survive redeploys.
+- On a fresh database the app creates the whole schema. Existing SQLite data can
+  be moved across with **Import / Export** (export from SQLite, import into
+  Postgres); explicit ids are reinserted and the auto-increment counters are
+  advanced afterwards.
+
 > Cycle refresh is **blocked** when Linear's active cycle differs from the cycle
 > stored locally and that cycle has not been finalized, so work can't be silently
 > discarded. Finalize it first (below).
@@ -391,8 +419,9 @@ files are copied and there is no app-wide switch.
 Backend settings are overridable via `EE_`-prefixed environment variables (see
 `backend/.env.example`), e.g. `EE_DATABASE_URL`, `EE_FRONTEND_DIST`,
 `EE_LINEAR_API_URL`, `EE_CORS_ORIGINS`, `EE_SECRET_KEY`, `EE_SESSION_SECURE`.
-When `EE_SECRET_KEY` is unset, a signing key is written next to the SQLite
-file as `.session_secret`.
+`EE_DATABASE_URL` accepts a SQLite URL or a Postgres/Supabase connection string.
+When `EE_SECRET_KEY` is unset, a signing key is written next to the SQLite file
+as `.session_secret`; set it explicitly when the database is remote.
 
 Metric timing — the working timezone and the hour after which the current day
 counts as elapsed — is configured in the app under **Settings → Time

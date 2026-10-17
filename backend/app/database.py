@@ -8,6 +8,8 @@ from pathlib import Path
 
 from sqlalchemy import DateTime, Engine, Integer, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
+from sqlalchemy.schema import CreateColumn
 from sqlalchemy.types import TypeDecorator
 
 from .config import DEFAULT_DATA_DIR, settings
@@ -81,13 +83,50 @@ def _ensure_sqlite_dir(database_url: str) -> None:
         DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def is_sqlite(database_url: str) -> bool:
+    """True when ``database_url`` points at a SQLite database."""
+    return database_url.startswith("sqlite")
+
+
+def _is_transaction_pooler(database_url: str) -> bool:
+    """True for PgBouncer-style transaction pooling endpoints.
+
+    Supabase exposes one on port 6543 (and providers commonly accept a
+    ``pgbouncer=true`` marker). Those endpoints hand each transaction a
+    different backend, so pooled connections and server-side prepared
+    statements cannot be reused safely.
+    """
+    lowered = database_url.lower()
+    return ":6543" in lowered or "pgbouncer=true" in lowered
+
+
+def _create_engine(database_url: str) -> Engine:
+    """Build an engine with connection settings appropriate to the dialect."""
+    if is_sqlite(database_url):
+        return create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+            future=True,
+        )
+
+    engine_kwargs: dict[str, object] = {"future": True, "pool_pre_ping": True}
+    connect_args: dict[str, object] = {}
+    if _is_transaction_pooler(database_url):
+        engine_kwargs["poolclass"] = NullPool
+        # psycopg 3 only: never keep a server-side prepared statement around.
+        if "+psycopg" in database_url and "+psycopg2" not in database_url:
+            connect_args["prepare_threshold"] = None
+    else:
+        # Recycle before most managed providers drop an idle connection.
+        engine_kwargs["pool_recycle"] = 1800
+    if connect_args:
+        engine_kwargs["connect_args"] = connect_args
+    return create_engine(database_url, **engine_kwargs)
+
+
 _ensure_sqlite_dir(settings.database_url)
 
-_connect_args = (
-    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-)
-
-engine = create_engine(settings.database_url, connect_args=_connect_args, future=True)
+engine = _create_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
@@ -100,7 +139,7 @@ def _enable_sqlite_foreign_keys(dbapi_connection: object, _connection_record: ob
         cursor.close()
 
 
-if settings.database_url.startswith("sqlite"):
+if is_sqlite(settings.database_url):
     event.listen(engine, "connect", _enable_sqlite_foreign_keys)
 
 
@@ -120,10 +159,13 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _migrate_to_cycle_hub()
-    _add_missing_sqlite_columns()
+    # Legacy SQLite renames (e.g. projects.hidden -> excluded) must run before
+    # the generic backfill, or it would add the new column name alongside the
+    # old one.
     _add_member_group_color_column()
     _add_project_excluded_column()
     _add_user_role_column()
+    _add_missing_columns()
     _migrate_member_roles_to_groups()
     _migrate_to_cycle_memberships()
     _set_schema_version(engine, CURRENT_SCHEMA_VERSION)
@@ -594,17 +636,18 @@ def _migrate_to_cycle_memberships(target_engine: Engine | None = None) -> None:
         connection.commit()
 
 
-def _add_member_group_color_column() -> None:
+def _add_member_group_color_column(target_engine: Engine | None = None) -> None:
     """Add ``member_groups.color`` to databases created before group colours."""
-    if engine.dialect.name != "sqlite":
+    add_engine = target_engine or engine
+    if add_engine.dialect.name != "sqlite":
         return
-    inspector = inspect(engine)
+    inspector = inspect(add_engine)
     if "member_groups" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("member_groups")}
     if "color" in columns:
         return
-    with engine.begin() as connection:
+    with add_engine.begin() as connection:
         connection.execute(
             text(
                 "ALTER TABLE member_groups "
@@ -613,17 +656,18 @@ def _add_member_group_color_column() -> None:
         )
 
 
-def _add_user_role_column() -> None:
+def _add_user_role_column(target_engine: Engine | None = None) -> None:
     """Add ``users.role`` to databases created before ADMIN / READER roles."""
-    if engine.dialect.name != "sqlite":
+    add_engine = target_engine or engine
+    if add_engine.dialect.name != "sqlite":
         return
-    inspector = inspect(engine)
+    inspector = inspect(add_engine)
     if "users" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("users")}
     if "role" in columns:
         return
-    with engine.begin() as connection:
+    with add_engine.begin() as connection:
         connection.execute(
             text(
                 "ALTER TABLE users "
@@ -632,17 +676,18 @@ def _add_user_role_column() -> None:
         )
 
 
-def _add_project_excluded_column() -> None:
+def _add_project_excluded_column(target_engine: Engine | None = None) -> None:
     """Add ``projects.excluded`` to databases created before local exclude/include."""
-    if engine.dialect.name != "sqlite":
+    add_engine = target_engine or engine
+    if add_engine.dialect.name != "sqlite":
         return
-    inspector = inspect(engine)
+    inspector = inspect(add_engine)
     if "projects" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("projects")}
     if "excluded" in columns:
         return
-    with engine.begin() as connection:
+    with add_engine.begin() as connection:
         if "hidden" in columns:
             connection.execute(text("ALTER TABLE projects RENAME COLUMN hidden TO excluded"))
             return
@@ -654,29 +699,31 @@ def _add_project_excluded_column() -> None:
         )
 
 
-def _add_missing_sqlite_columns() -> None:
-    """Add columns introduced after a table was first created.
+def _add_missing_columns(target_engine: Engine | None = None) -> None:
+    """Add columns that exist on the models but not yet in an existing table.
 
-    SQLite has limited ``ALTER TABLE`` support, and SQLAlchemy's ``create_all``
-    never alters existing tables. This adds any nullable columns declared on the
-    models that are missing from an existing database.
+    ``create_all`` only ever creates whole tables, so a column added to a model
+    after its table first existed is invisible to it. This backfills such
+    columns with a plain ``ALTER TABLE ... ADD COLUMN``, which both SQLite and
+    Postgres support. A non-nullable column can only be added when it declares a
+    server default, since existing rows need a value.
     """
-    if engine.dialect.name != "sqlite":
-        return
+    add_engine = target_engine or engine
+    inspector = inspect(add_engine)
+    existing_tables = set(inspector.get_table_names())
 
-    inspector = inspect(engine)
-    with engine.begin() as connection:
+    with add_engine.begin() as connection:
         for table in Base.metadata.sorted_tables:
-            if table.name not in inspector.get_table_names():
+            if table.name not in existing_tables:
                 continue
             existing = {column["name"] for column in inspector.get_columns(table.name)}
             for column in table.columns:
-                if column.name in existing:
+                if column.name in existing or column.primary_key:
                     continue
-                # Only nullable columns can be added safely without a default.
-                if not column.nullable:
+                if not column.nullable and column.server_default is None:
                     continue
-                column_type = column.type.compile(engine.dialect)
+                # Let the dialect render the type, nullability and default.
+                column_ddl = str(CreateColumn(column).compile(dialect=add_engine.dialect))
                 connection.execute(
-                    text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column_type}')
+                    text(f'ALTER TABLE "{table.name}" ADD COLUMN {column_ddl}')
                 )

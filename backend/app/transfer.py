@@ -130,7 +130,7 @@ def import_snapshot(db: Session, payload: object) -> ImportResult:
     tables = _parse_export(payload)
     try:
         _replace_shareable(db, tables)
-        _reset_sqlite_sequences(db)
+        _reset_sequences(db)
         db.commit()
     except Exception:
         db.rollback()
@@ -289,10 +289,22 @@ def _scrub(value: Any) -> Any:
     return value
 
 
+def _reset_sequences(db: Session) -> None:
+    """Advance each table's auto-increment counter past the largest imported id.
+
+    Import inserts rows with their original, explicit primary keys. Neither
+    SQLite nor Postgres moves the table's sequence when you do that, so the next
+    ORM insert would reuse a low id and fail with a unique violation. This nudges
+    every counter forward on the dialects we support.
+    """
+    dialect = db.get_bind().dialect.name
+    if dialect == "sqlite":
+        _reset_sqlite_sequences(db)
+    elif dialect == "postgresql":
+        _reset_postgres_sequences(db)
+
+
 def _reset_sqlite_sequences(db: Session) -> None:
-    bind = db.get_bind()
-    if bind.dialect.name != "sqlite":
-        return
     exists = db.scalar(
         text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'")
     )
@@ -307,3 +319,23 @@ def _reset_sqlite_sequences(db: Session) -> None:
                 text("INSERT INTO sqlite_sequence (name, seq) VALUES (:name, :seq)"),
                 {"name": table, "seq": max_id},
             )
+
+
+def _reset_postgres_sequences(db: Session) -> None:
+    for model in EXPORT_MODELS:
+        table = model.__tablename__
+        max_id = db.scalar(text(f"SELECT MAX(id) FROM {table}"))
+        if max_id is None:
+            continue
+        # Resolve the owning sequence for an integer id column (serial or
+        # identity). NULL when the column has none, in which case there is
+        # nothing to advance.
+        sequence = db.scalar(
+            text("SELECT pg_get_serial_sequence(:table, 'id')"), {"table": table}
+        )
+        if sequence is None:
+            continue
+        db.execute(
+            text("SELECT setval(:sequence, :value, true)"),
+            {"sequence": sequence, "value": max_id},
+        )
