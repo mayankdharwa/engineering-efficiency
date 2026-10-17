@@ -1,4 +1,5 @@
-import { defineChart, dot, link, text } from '@tanstack/charts'
+import { defineChart, dot, link, ruleX, text } from '@tanstack/charts'
+import { decorative } from '@tanstack/charts/mark/decorative'
 import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
@@ -7,6 +8,7 @@ import { useMemo } from 'react'
 import { useTimezone } from '../hooks/useAppSettings'
 import { formatCalendarDate, formatDateTime } from '../lib/format'
 import { projectStateKey } from '../lib/projectState'
+import { isoDateInTimeZone } from '../lib/timezone'
 import type { ProjectDueDateChangeOut, ProjectOut } from '../types'
 
 const COLOR_OPEN_FILL = 'var(--card)'
@@ -17,6 +19,8 @@ const COLOR_PLAN = 'var(--trajectory-plan)'
 const COLOR_SHIFT = 'var(--trajectory-shift)'
 /** Same emerald as the completed check in the projects table. */
 const COLOR_COMPLETE = 'var(--trajectory-complete)'
+/** Reference line marking the current day, distinct from the plan/shift tones. */
+const COLOR_TODAY = 'var(--trajectory-today)'
 const CHECK_OFFSET = 16
 const MS_PER_DAY = 86_400_000
 const NAME_MAX = 28
@@ -243,6 +247,12 @@ function TrajectoryTooltip({
 
 export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] }) {
   const timeZone = useTimezone()
+  // Today's calendar date in the configured timezone, expressed in the same
+  // UTC-midnight millis the chart maps due dates to so the line aligns.
+  const today = useMemo(() => {
+    const iso = isoDateInTimeZone(new Date().toISOString(), timeZone)
+    return calendarMs(iso)
+  }, [timeZone])
   const series = useMemo(
     () =>
       projects.flatMap((project) => {
@@ -283,8 +293,23 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
       labels.set(stop.key, stop.label)
       order.push(stop.key)
     }
+    // Only draw the reference line when today falls inside the padded domain;
+    // otherwise it would paint outside the plot rectangle.
+    const todayMark =
+      today !== null && today >= min - pad && today <= max + pad ? today : null
+    const todayOnRight = todayMark !== null && todayMark > min + (max - min) / 2
     return defineChart({
       marks: [
+        ...(todayMark === null
+          ? []
+          : [
+              ruleX([todayMark], {
+                id: 'today',
+                stroke: COLOR_TODAY,
+                strokeWidth: 1.5,
+                strokeDasharray: '4 4',
+              }),
+            ]),
         link(planSegments, {
           x1: 'x1',
           x2: 'x2',
@@ -336,6 +361,25 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
           fontSize: 13,
           fontWeight: 600,
         }),
+        ...(todayMark === null
+          ? []
+          : [
+              decorative(
+                text([todayMark], {
+                  id: 'today-label',
+                  x: (value) => value,
+                  y: () => 1,
+                  yScale: 'today',
+                  text: () => 'Today',
+                  anchor: todayOnRight ? 'end' : 'start',
+                  dx: todayOnRight ? -6 : 6,
+                  dy: 10,
+                  fill: COLOR_TODAY,
+                  fontSize: 11,
+                  fontWeight: 600,
+                }),
+              ),
+            ]),
       ],
       scales: {
         x: {
@@ -346,6 +390,12 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
         y: {
           scale: () => scaleBand<string>().domain(order).padding(0.45),
           axis: { ticks: { format: (value) => labels.get(String(value)) ?? String(value) } },
+        },
+        // Fixed 0..1 axis used only to park the "Today" label at the plot top.
+        today: {
+          scale: scaleLinear().domain([0, 1]),
+          channel: 'y',
+          axis: false,
         },
       },
       margin: { left: 168, right: 28, top: 8, bottom: 36 },
@@ -369,7 +419,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
         ],
       },
     })
-  }, [checks, endpointMarks, openDots, planSegments, shiftSegments, stops])
+  }, [checks, endpointMarks, openDots, planSegments, shiftSegments, stops, today])
 
   if (projects.length === 0) {
     return (
