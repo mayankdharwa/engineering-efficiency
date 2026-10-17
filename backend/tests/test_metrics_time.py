@@ -72,6 +72,15 @@ def test_elapsed_working_days_negative_offset_timezone() -> None:
     assert elapsed_working_days(start, now, LOS_ANGELES, CUTOFF) == 3.0
 
 
+def test_elapsed_working_days_stops_at_cycle_end() -> None:
+    start = datetime(2026, 10, 5, 0, 0, tzinfo=UTC)  # Monday
+    end = datetime(2026, 10, 9, 0, 0, tzinfo=UTC)  # Friday, cycle's last day
+    # Two weeks later the count is still capped at the cycle's five weekdays.
+    now = datetime(2026, 10, 23, 20, 0, tzinfo=UTC)
+    assert elapsed_working_days(start, now, UTC_ZONE, CUTOFF) == 15.0
+    assert elapsed_working_days(start, now, UTC_ZONE, CUTOFF, end) == 5.0
+
+
 def test_remaining_weekdays_includes_today_before_cutoff() -> None:
     now = datetime(2026, 10, 14, 11, 30, tzinfo=UTC)  # Wednesday
     assert remaining_weekdays(date(2026, 10, 16), now, UTC_ZONE, CUTOFF) == 3.0
@@ -497,10 +506,75 @@ def test_member_velocity_caps_days_passed_at_available_days(monkeypatch) -> None
         assert metrics.progress == 0.8
         by_id = {row.linear_id: row for row in metrics.members}
         # Ada: 8 days × 2 pts expected, 10 done.
+        assert by_id["u1"].expected_points == POINTS_PER_DAY * 8.0
         assert by_id["u1"].velocity == 10.0 / (POINTS_PER_DAY * 8.0)
         # Grace: 3 leave days (7 available); min(8, 7) × 2 expected.
+        assert by_id["u2"].expected_points == POINTS_PER_DAY * 7.0
         assert by_id["u2"].velocity == 10.0 / (POINTS_PER_DAY * 7.0)
         # Team rolls up the same expected points: 16 + 14.
         assert metrics.velocity == 20.0 / 30.0
+        assert metrics.velocity_trend[-1].velocity == metrics.velocity
+
+
+def test_velocity_stops_counting_elapsed_days_when_cycle_has_ended(monkeypatch) -> None:
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
+        db.add(team)
+        db.flush()
+        start = datetime(2026, 10, 5, 0, 0, tzinfo=UTC)  # Monday
+        end = datetime(2026, 10, 16, 0, 0, tzinfo=UTC)  # Friday, the last day
+        # An override longer than the ten weekdays the cycle actually spans, so
+        # uncontrolled elapsed days would visibly deflate velocity after the end.
+        cycle = Cycle(
+            team_id=team.id,
+            linear_id="c2",
+            number=2,
+            starts_at=start,
+            ends_at=end,
+            working_days=20,
+        )
+        db.add(cycle)
+        db.flush()
+        team.current_cycle_id = cycle.id
+        ada = TeamMember(team_id=team.id, linear_id="u1", name="Ada", display_name="ada")
+        db.add(ada)
+        db.flush()
+        db.add(
+            CycleMembership(
+                team_id=team.id,
+                cycle_id=cycle.id,
+                member_id=ada.id,
+                member_linear_id="u1",
+                unavailable_days=0.0,
+            )
+        )
+        db.add(
+            Issue(
+                linear_id="i-ada",
+                team_id=team.id,
+                identifier="ENG-1",
+                title="Work",
+                estimate=20.0,
+                state_type="completed",
+                cycle_id=cycle.id,
+                assignee_linear_id="u1",
+                assignee_name="u1",
+                completed_at=datetime(2026, 10, 9, 12, 0, tzinfo=UTC),
+            )
+        )
+        db.add(AppSettings(id=1, timezone="UTC", day_cutoff_hour=19))
+        db.commit()
+
+        # Two weeks after the cycle ended, elapsed work stays capped at the ten
+        # weekdays (Mon 5 – Fri 16) the cycle covered.
+        monkeypatch.setattr(
+            "app.metrics.utcnow", lambda: datetime(2026, 10, 30, 20, 0, tzinfo=UTC)
+        )
+        metrics = compute_team_metrics(db, team)
+        assert metrics.progress == 0.5
+        assert metrics.velocity == 20.0 / (POINTS_PER_DAY * 10.0)
         assert metrics.velocity_trend[-1].velocity == metrics.velocity
 

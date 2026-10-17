@@ -81,6 +81,7 @@ export interface PointMetrics {
   done_points: number
   adhoc_points: number
   planned_points: number
+  expected_points: number
   unestimated_count: number
   planning_efficiency: number | null
   velocity: number | null

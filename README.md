@@ -30,6 +30,8 @@ The app has three top-level pages: **Cycles**, **Projects**, and **Settings**.
 - **Velocity** = `done ÷ expected`. Per person, `expected` is
   `2 × min(days till today, available days)`, where available days are
   `working_days − unavailable_days` (only `completed` states count as done).
+  "Days till today" is capped at the last day of the cycle, so days after a
+  finished cycle do not keep lowering velocity.
   100% means they finished 2 points for each day they should have been working.
   Taken is not in the denominator, so a light load pulls velocity down once
   the backlog is gone. Team and group velocity use the same definition rolled
@@ -67,7 +69,7 @@ The app has three top-level pages: **Cycles**, **Projects**, and **Settings**.
 
 In the group and per-person tables:
 
-- **Velocity** is orange above 100%, red below 85%, and otherwise neutral.
+- **Velocity** is orange above 100%, red below 90%, and otherwise neutral.
 - **Bandwidth** and **planning efficiency** show the percentage plus the matching
   fraction (`taken/capacity` and `planned/taken`). Values below 100% are amber;
   values above 100% are red; exactly 100% is neutral.
@@ -244,8 +246,8 @@ mounted at `/data`.
    planned vs adhoc), the **velocity trend** line, the **group breakdown**
    table, the **per-person** table, and the **Issues** table (tick **Show done**
    to include completed issues; the Project column is shown here). Click any
-   column header to sort a table. Shared metric columns are bandwidth, velocity,
-   available points, completed points, adhoc points and planning efficiency.
+   column header to sort a table. Shared metric columns are bandwidth, available
+   points, velocity, adhoc points and planning efficiency.
    Zero unavailable days and non-positive available points render as a dash.
 10. Open **Projects** and pick a team. **Refresh** downloads that team's Linear
    projects and their issues (a separate sync from cycle refresh; archived

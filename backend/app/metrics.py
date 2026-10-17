@@ -80,6 +80,23 @@ def _effective_date(now_local: datetime, cutoff_hour: int) -> date:
     return now_local.date()
 
 
+def _last_elapsed_day(
+    now: datetime,
+    tz: ZoneInfo,
+    cutoff_hour: int,
+    end: datetime | None = None,
+) -> date:
+    """The last elapsed calendar day, capped at a cycle end when given.
+
+    Once a cycle has finished, days after it must not keep accruing as elapsed
+    work, so ``end`` bounds the count for completed cycles.
+    """
+    last = _effective_date(_to_local(now, tz), cutoff_hour)
+    if end is not None:
+        last = min(last, _to_local(end, tz).date())
+    return last
+
+
 def _count_weekdays(first: date, last: date) -> float:
     """Count weekdays in the inclusive interval ``[first, last]``."""
     if last < first:
@@ -126,18 +143,21 @@ def elapsed_working_days(
     now: datetime,
     tz: ZoneInfo | None = None,
     cutoff_hour: int = DEFAULT_DAY_CUTOFF_HOUR,
+    end: datetime | None = None,
 ) -> float:
     """Count weekdays from ``start`` through the last *elapsed* day inclusive.
 
     A day only counts once the configured cutoff hour has passed in the working
     timezone. Before the cutoff the current day is still underway, so it is not
-    treated as elapsed (fixing velocity being penalised mid-day).
+    treated as elapsed (fixing velocity being penalised mid-day). When ``end``
+    is given the count stops at the cycle boundary, so days after a finished
+    cycle do not keep inflating elapsed work.
     """
     if start is None:
         return 0.0
     zone = tz or ZoneInfo("UTC")
     first = _to_local(start, zone).date()
-    last = _effective_date(_to_local(now, zone), cutoff_hour)
+    last = _last_elapsed_day(now, zone, cutoff_hour, end)
     return _count_weekdays(first, last)
 
 
@@ -216,6 +236,7 @@ class MemberMetrics:
     done_points: float
     adhoc_points: float
     planned_points: float
+    expected_points: float
     unestimated_count: int
     planning_efficiency: float | None
     velocity: float | None
@@ -257,6 +278,7 @@ class GroupMetrics:
     done_points: float
     adhoc_points: float
     planned_points: float
+    expected_points: float
     unestimated_count: int
     planning_efficiency: float | None
     velocity: float | None
@@ -341,9 +363,10 @@ def compute_team_metrics(
 
     # Velocity is scaled by how far through the cycle we are, so a mid-cycle
     # number isn't penalised for the time that hasn't elapsed yet. The current
-    # day only counts once the cutoff hour has passed.
+    # day only counts once the cutoff hour has passed, and a finished cycle
+    # stops accruing elapsed days at its last day.
     now = utcnow()
-    elapsed = elapsed_working_days(cycle.starts_at, now, zone, cutoff_hour)
+    elapsed = elapsed_working_days(cycle.starts_at, now, zone, cutoff_hour, cycle.ends_at)
     progress = _days_passed_fraction(elapsed, working_days)
 
     ctx = load_team_cycle_data(db, team, cycle)
@@ -673,9 +696,7 @@ def _velocity_trend(
         return []
 
     start = _to_local(starts_at, tz).date()
-    last = _effective_date(_to_local(now, tz), cutoff_hour)
-    if ends_at is not None:
-        last = min(last, _to_local(ends_at, tz).date())
+    last = _last_elapsed_day(now, tz, cutoff_hour, ends_at)
     if last < start:
         return []
 
@@ -743,6 +764,7 @@ def _build_group_metrics(
         done_points=done,
         adhoc_points=adhoc,
         planned_points=planned,
+        expected_points=expected,
         unestimated_count=sum(row.unestimated_count for row in group),
         planning_efficiency=_ratio(planned, taken),
         velocity=_ratio(done, expected),
@@ -785,6 +807,7 @@ def _build_member_metrics(
         done_points=bucket.done,
         adhoc_points=bucket.adhoc,
         planned_points=planned,
+        expected_points=expected,
         unestimated_count=bucket.unestimated,
         planning_efficiency=_ratio(planned, bucket.taken),
         velocity=_ratio(bucket.done, expected),

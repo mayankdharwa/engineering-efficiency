@@ -17,20 +17,25 @@ function bandwidthTone(displayed: number | null): string {
   return 'text-foreground'
 }
 
+/** Maps a displayed percentage to the tone class for the ratio. */
+export type RatioTone = (displayed: number | null) => string
+
 interface BandwidthCellProps {
   ratio: number | null
   /** Parenthetical next to the percentage, e.g. "18/20". */
   detail: ReactNode
+  /** Colour mapping; defaults to the bandwidth/planning scale. */
+  tone?: RatioTone
 }
 
 /** Combined ratio cell, e.g. "90.0% (18/20)". */
-export function BandwidthCell({ ratio, detail }: BandwidthCellProps) {
+export function BandwidthCell({ ratio, detail, tone = bandwidthTone }: BandwidthCellProps) {
   const displayed = displayedPercent(ratio)
   const percent = displayed === null ? '—' : formatPercent(ratio, BANDWIDTH_DIGITS)
   const weight = displayed !== null && displayed !== 100 ? 'font-bold' : 'font-normal'
   return (
     <span className="tabular-nums">
-      <span className={`${weight} ${bandwidthTone(displayed)}`}>{percent}</span>{' '}
+      <span className={`${weight} ${tone(displayed)}`}>{percent}</span>{' '}
       <span className="text-muted-foreground">({detail})</span>
     </span>
   )

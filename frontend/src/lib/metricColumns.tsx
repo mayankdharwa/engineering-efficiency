@@ -1,14 +1,21 @@
 import { createColumnHelper } from '@tanstack/react-table'
 import { AvailablePointsCell } from '../components/AvailablePointsCell'
-import { BandwidthCell } from '../components/BandwidthCell'
+import { BandwidthCell, type RatioTone } from '../components/BandwidthCell'
 import type { AppColumnDef } from '../components/DataTable'
-import { PercentCell } from '../components/PercentCell'
 import { formatPoints } from './format'
 import { appTableFeatures } from './table'
 import type { PointMetrics } from '../types'
 
+/** Velocity tone: orange above 100%, red below 90%, otherwise neutral. */
+const velocityTone: RatioTone = (displayed) => {
+  if (displayed === null) return 'text-muted-foreground'
+  if (displayed > 100) return 'text-orange-600 dark:text-orange-400'
+  if (displayed < 90) return 'text-destructive'
+  return 'text-foreground'
+}
+
 /**
- * Shared bandwidth / velocity / available / done / adhoc / planning columns.
+ * Shared bandwidth / available / velocity / adhoc / planning columns.
  * First-column(s) stay per-table.
  */
 export function createSharedMetricColumns<T extends PointMetrics>(
@@ -29,11 +36,6 @@ export function createSharedMetricColumns<T extends PointMetrics>(
         )
       },
     }),
-    helper.accessor((row) => row.velocity, {
-      id: 'velocity',
-      header: 'Velocity',
-      cell: (ctx) => <PercentCell value={ctx.getValue()} />,
-    }),
     helper.accessor((row) => row.capacity_points - row.taken_points, {
       id: 'available_points',
       header: 'Available Points',
@@ -41,10 +43,19 @@ export function createSharedMetricColumns<T extends PointMetrics>(
         <AvailablePointsCell available={ctx.getValue()} pointsPerDay={pointsPerDay} />
       ),
     }),
-    helper.accessor((row) => row.done_points, {
-      id: 'done_points',
-      header: 'Completed Points',
-      cell: (ctx) => <span className="tabular-nums">{formatPoints(ctx.getValue())}</span>,
+    helper.accessor((row) => row.velocity, {
+      id: 'velocity',
+      header: 'Velocity',
+      cell: (ctx) => {
+        const row = ctx.row.original
+        return (
+          <BandwidthCell
+            ratio={row.velocity}
+            tone={velocityTone}
+            detail={`${formatPoints(row.done_points)}/${formatPoints(row.expected_points)}`}
+          />
+        )
+      },
     }),
     helper.accessor((row) => row.adhoc_points, {
       id: 'adhoc_points',

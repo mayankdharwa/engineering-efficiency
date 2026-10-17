@@ -158,6 +158,7 @@ class MemberMetricsOut(BaseModel):
     done_points: float
     adhoc_points: float
     planned_points: float
+    expected_points: float
     unestimated_count: int
     planning_efficiency: float | None = None
     velocity: float | None = None
@@ -190,6 +191,7 @@ class GroupMetricsOut(BaseModel):
     done_points: float
     adhoc_points: float
     planned_points: float
+    expected_points: float
     unestimated_count: int
     planning_efficiency: float | None = None
     velocity: float | None = None
