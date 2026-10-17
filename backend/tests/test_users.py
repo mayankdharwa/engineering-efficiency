@@ -1,4 +1,4 @@
-"""App user management and ADMIN / READER settings access."""
+"""App user management and ADMIN / MANAGER / READER access."""
 
 from __future__ import annotations
 
@@ -9,9 +9,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
-from tests.auth_helpers import TEST_USERNAME, authenticate
+from tests.auth_helpers import TEST_PASSWORD, TEST_USERNAME, authenticate
 
 READER_PASSWORD = "reader-password"
+MANAGER_PASSWORD = "manager-password"
 
 
 def _make_client() -> TestClient:
@@ -36,17 +37,23 @@ def _make_client() -> TestClient:
 
 
 def _login_as_reader(client: TestClient) -> dict:
+    return _create_and_login(
+        client, username="reader", password=READER_PASSWORD, role="reader"
+    )
+
+
+def _create_and_login(client: TestClient, *, username: str, password: str, role: str) -> dict:
     created = client.post(
         "/api/users",
-        json={"username": "reader", "password": READER_PASSWORD, "role": "reader"},
+        json={"username": username, "password": password, "role": role},
     )
     assert created.status_code == 201, created.text
     client.post("/api/auth/logout")
     login = client.post(
         "/api/auth/login",
-        json={"username": "reader", "password": READER_PASSWORD},
+        json={"username": username, "password": password},
     )
-    assert login.status_code == 200
+    assert login.status_code == 200, login.text
     return created.json()
 
 
@@ -110,10 +117,58 @@ def test_reader_cannot_access_settings() -> None:
             json={"timezone": "UTC", "day_cutoff_hour": 19},
         ).status_code == 403
         assert client.post("/api/teams/import").status_code == 403
+        assert client.post("/api/teams/1/refresh").status_code == 403
+        assert client.post("/api/teams/1/projects/refresh").status_code == 403
         assert client.post(
             "/api/users",
             json={"username": "other", "password": READER_PASSWORD, "role": "reader"},
         ).status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_manager_can_refresh_but_not_access_settings() -> None:
+    client = _make_client()
+    try:
+        authenticate(client)
+        _create_and_login(
+            client, username="manager", password=MANAGER_PASSWORD, role="manager"
+        )
+
+        status = client.get("/api/auth/status")
+        assert status.json()["role"] == "manager"
+
+        # Manager is otherwise a reader: no settings, no user management.
+        assert client.get("/api/users").status_code == 403
+        assert client.get("/api/config").status_code == 403
+        assert client.post("/api/teams/import").status_code == 403
+
+        # Refreshes pass the permission gate. There is no team/Linear config
+        # here, so they fail with 400/404 — never 403.
+        assert client.post("/api/teams/1/refresh").status_code != 403
+        assert client.post("/api/teams/1/projects/refresh").status_code != 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_manager_role_round_trips_through_user_api() -> None:
+    client = _make_client()
+    try:
+        authenticate(client)
+        created = _create_and_login(
+            client, username="mgr", password=MANAGER_PASSWORD, role="manager"
+        )
+        assert created["role"] == "manager"
+
+        # Log back in as the admin to demote the manager to reader.
+        client.post("/api/auth/logout")
+        client.post(
+            "/api/auth/login",
+            json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        )
+        updated = client.patch(f"/api/users/{created['id']}", json={"role": "reader"})
+        assert updated.status_code == 200
+        assert updated.json()["role"] == "reader"
     finally:
         app.dependency_overrides.clear()
 

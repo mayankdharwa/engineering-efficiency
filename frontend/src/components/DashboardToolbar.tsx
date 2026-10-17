@@ -19,6 +19,7 @@ export function DashboardToolbar({
   onGroupsChange,
   refreshPending,
   onRefresh,
+  canRefresh,
   stats,
   timezone,
 }: {
@@ -34,6 +35,7 @@ export function DashboardToolbar({
   onGroupsChange: (next: Set<string>) => void
   refreshPending: boolean
   onRefresh: () => void
+  canRefresh: boolean
   stats: TeamStatsOut | undefined
   timezone: string
 }) {
@@ -70,8 +72,9 @@ export function DashboardToolbar({
         </div>
         <Button
           type="button"
-          disabled={selectedTeamId === null || refreshPending}
+          disabled={selectedTeamId === null || refreshPending || !canRefresh}
           onClick={onRefresh}
+          title={canRefresh ? undefined : 'Managers and admins can refresh'}
         >
           <RefreshCwIcon className={refreshPending ? 'animate-spin' : undefined} />
           {refreshPending ? 'Refreshing…' : 'Refresh'}

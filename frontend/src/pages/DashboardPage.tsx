@@ -20,6 +20,7 @@ import { MetricsTable } from '../components/MetricsTable'
 import { AdhocByDayChart } from '../components/AdhocByDayChart'
 import { VelocityTrendChart } from '../components/VelocityTrendChart'
 import { useTimezone } from '../hooks/useAppSettings'
+import { useCanRefresh } from '../hooks/useAuth'
 import { useDashboardQueries } from '../hooks/useDashboardQueries'
 import { buildDashboardView } from '../lib/dashboardMetrics'
 import { formatMoney, formatPercent, formatPoints } from '../lib/format'
@@ -49,6 +50,7 @@ function StatCard({
 
 export function DashboardPage() {
   const timezone = useTimezone()
+  const canRefresh = useCanRefresh()
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
   // Empty set means all groups (see isAllGroups / groupKey).
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
@@ -116,6 +118,7 @@ export function DashboardPage() {
             onGroupsChange={setSelectedGroups}
             refreshPending={refreshMutation.isPending}
             onRefresh={() => selectedTeamId !== null && refreshMutation.mutate(selectedTeamId)}
+            canRefresh={canRefresh}
             stats={stats}
             timezone={timezone}
           />

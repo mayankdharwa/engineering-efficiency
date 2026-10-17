@@ -91,8 +91,9 @@ preset is tracked in `frontend/components.json`; re-apply it with
 FastAPI serves both the JSON API under `/api` and the built React SPA.
 Every page and API (except `/api/health` and the login endpoints) requires a
 session cookie. On first launch the app asks you to create an **admin**
-account. Admins can add more users under **Settings → App Users**. **Readers**
-can open Cycles and Projects but cannot open or change Settings.
+account. Admins can add more users under **Settings → App Users**. **Managers**
+and **Readers** can open Cycles and Projects but cannot open or change Settings;
+Managers can additionally run refreshes, Readers cannot.
 
 ## Repository layout
 
@@ -205,8 +206,8 @@ mounted at `/data`.
 1. Open the app and **create an admin account** (first launch) or **sign in**.
    The password is stored only in the local SQLite database as a hash. Import /
    export never includes accounts. Under **Settings → App Users**, an admin
-   can add more people as **Admin** (full access) or **Reader** (Cycles and
-   Projects only).
+   can add more people as **Admin** (full access), **Manager** (Cycles and
+   Projects, can run refreshes), or **Reader** (Cycles and Projects only).
 2. Create a Linear **personal API key**: Linear → *Settings* → *Security & access*
    → *Personal API keys*.
 3. Open **Settings**, pick **Linear Setup** in the side panel, paste the key,
@@ -321,9 +322,11 @@ mounted at `/data`.
 
 Omitting `cycle_id` uses the team's current cycle. Every route except
 `/api/health` and the public `/api/auth/*` endpoints requires the session
-cookie from login. Settings writes, Linear connection, import/export, and
-user management also require the **admin** role. Interactive docs at `/docs`
-(and `/redoc`, `/openapi.json`) are behind login.
+cookie from login. Refresh endpoints (`.../refresh` and
+`.../projects/refresh`) require the **manager** or **admin** role. Settings
+writes, Linear connection, import/export, and user management also require the
+**admin** role. Interactive docs at `/docs` (and `/redoc`, `/openapi.json`) are
+behind login.
 
 ## Database
 
@@ -333,8 +336,8 @@ or Postgres. The SQLite file lives at `backend/data/engineering_efficiency.db`
 columns; legacy SQLite databases are also migrated up to schema version **5**.
 Tables:
 
-- `users` — local login accounts (username, password hash, `admin` or `reader`
-  role). The first account is an admin. Not included in export.
+- `users` — local login accounts (username, password hash, `admin`, `manager`
+  or `reader` role). The first account is an admin. Not included in export.
 - `linear_config` — the saved API key and resolved viewer/org info (singleton).
   Not included in export.
 - `app_settings` — the working timezone and end-of-day cutoff used by the metrics

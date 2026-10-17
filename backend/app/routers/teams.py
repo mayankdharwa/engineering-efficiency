@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from ..auth import require_admin
+from ..auth import require_admin, require_refresher
 from ..cycles import format_cycle_label
 from ..database import get_db
 from ..linear_client import LinearError
@@ -84,7 +84,7 @@ def import_teams(db: Session = Depends(get_db)) -> list[Team]:
 @router.post(
     "/{team_id}/refresh",
     response_model=RefreshResult,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_refresher)],
 )
 def refresh_team(team_id: int, db: Session = Depends(get_db)) -> RefreshResult:
     """Download the current cycle's issues for one team into SQLite."""

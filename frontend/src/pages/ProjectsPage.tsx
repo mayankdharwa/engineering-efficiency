@@ -21,6 +21,7 @@ import { ProjectDueDateTrajectory } from '../components/ProjectDueDateTrajectory
 import { ProjectStateFilter } from '../components/ProjectStateFilter'
 import { ProjectsTable } from '../components/ProjectsTable'
 import { TeamPicker } from '../components/TeamPicker'
+import { useCanRefresh } from '../hooks/useAuth'
 import { formatMoney, formatPoints, formatRelative } from '../lib/format'
 import { notifyError, notifySuccess } from '../lib/notify'
 import {
@@ -55,6 +56,7 @@ function StatCard({
 
 export function ProjectsPage() {
   const queryClient = useQueryClient()
+  const canRefresh = useCanRefresh()
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [selectedStates, setSelectedStates] = useState<Set<string>>(
@@ -183,8 +185,9 @@ export function ProjectsPage() {
             </div>
             <Button
               type="button"
-              disabled={selectedTeamId === null || refreshMutation.isPending}
+              disabled={selectedTeamId === null || refreshMutation.isPending || !canRefresh}
               onClick={() => selectedTeamId !== null && refreshMutation.mutate(selectedTeamId)}
+              title={canRefresh ? undefined : 'Managers and admins can refresh'}
             >
               <RefreshCwIcon className={refreshMutation.isPending ? 'animate-spin' : undefined} />
               {refreshMutation.isPending ? 'Refreshing…' : 'Refresh'}

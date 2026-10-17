@@ -7,6 +7,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..auth import require_refresher
 from ..database import get_db
 from ..models import Project, SyncKind, SyncStatus
 from ..projects import compute_team_project_costs
@@ -52,7 +53,11 @@ def update_project(
     return _project_view(db, team, project_id)
 
 
-@router.post("/{team_id}/projects/refresh", response_model=ProjectRefreshResult)
+@router.post(
+    "/{team_id}/projects/refresh",
+    response_model=ProjectRefreshResult,
+    dependencies=[Depends(require_refresher)],
+)
 def refresh_projects(team_id: int, db: Session = Depends(get_db)) -> ProjectRefreshResult:
     """Download the team's Linear projects and their issues."""
     team = get_team_or_404(db, team_id)

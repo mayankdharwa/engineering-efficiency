@@ -9,6 +9,7 @@ import secrets
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from pathlib import Path
+from typing import cast
 
 from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
@@ -161,8 +162,26 @@ def require_admin(user: User = Depends(require_user)) -> User:
     return user
 
 
+# Roles allowed to download fresh data from Linear (Refresh buttons).
+REFRESH_ROLES = frozenset({UserRole.ADMIN, UserRole.MANAGER})
+
+# Every valid role name, used to normalise a stored role for the API.
+ROLE_NAMES = frozenset(role.value for role in UserRole)
+
+
+def require_refresher(user: User = Depends(require_user)) -> User:
+    """Allow admins and managers to trigger a Linear refresh."""
+    if user.role not in REFRESH_ROLES:
+        raise HTTPException(
+            status_code=403, detail="Manager or admin access required to refresh."
+        )
+    return user
+
+
 def user_to_out(user: User) -> UserOut:
-    role: UserRoleName = "admin" if user.role == UserRole.ADMIN else "reader"
+    role: UserRoleName = "reader"
+    if user.role in ROLE_NAMES:
+        role = cast(UserRoleName, user.role)
     return UserOut(id=user.id, username=user.username, role=role)
 
 

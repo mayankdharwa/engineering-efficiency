@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'reader'
+export type UserRole = 'admin' | 'manager' | 'reader'
 
 export interface AuthStatusOut {
   authenticated: boolean

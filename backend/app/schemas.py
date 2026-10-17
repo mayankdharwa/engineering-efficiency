@@ -32,7 +32,7 @@ class ConnectionTestOut(BaseModel):
     organization_name: str | None = None
 
 
-UserRoleName = Literal["admin", "reader"]
+UserRoleName = Literal["admin", "manager", "reader"]
 
 
 def normalize_username(value: str) -> str:

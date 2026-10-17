@@ -75,6 +75,7 @@ class LinearConfig(Base):
 
 class UserRole(StrEnum):
     ADMIN = "admin"
+    MANAGER = "manager"
     READER = "reader"
 
 

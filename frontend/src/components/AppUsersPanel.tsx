@@ -45,11 +45,14 @@ import { QueryPanelBody } from './QueryPanelBody'
 
 const ROLES: { value: UserRole; label: string }[] = [
   { value: 'admin', label: 'Admin' },
+  { value: 'manager', label: 'Manager' },
   { value: 'reader', label: 'Reader' },
 ]
 
 function roleLabel(role: UserRole): string {
-  return role === 'admin' ? 'Admin' : 'Reader'
+  if (role === 'admin') return 'Admin'
+  if (role === 'manager') return 'Manager'
+  return 'Reader'
 }
 
 export function AppUsersPanel() {
@@ -109,7 +112,8 @@ export function AppUsersPanel() {
       <CardHeader className="border-b">
         <CardTitle>App Users</CardTitle>
         <CardDescription>
-          Admins can open Settings. Readers can view Cycles and Projects only.
+          Admins can open Settings. Managers can also run Linear refreshes.
+          Readers can view Cycles and Projects only.
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-6">
