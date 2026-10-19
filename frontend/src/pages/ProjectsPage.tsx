@@ -65,6 +65,9 @@ export function ProjectsPage() {
   const [trajectoryStates, setTrajectoryStates] = useState<Set<string>>(
     () => new Set(DEFAULT_PROJECT_STATES),
   )
+  const [costStates, setCostStates] = useState<Set<string>>(
+    () => new Set(DEFAULT_PROJECT_STATES),
+  )
   const [showDone, setShowDone] = useState(true)
 
   const teamsQuery = useQuery({ queryKey: queryKeys.teams, queryFn: api.listTeams })
@@ -86,8 +89,9 @@ export function ProjectsPage() {
     [projects, selectedStates],
   )
   const chartProjects = useMemo(
-    () => visibleProjects.filter((project) => !project.excluded),
-    [visibleProjects],
+    () =>
+      filterProjectsByState(projects, costStates).filter((project) => !project.excluded),
+    [projects, costStates],
   )
   const trajectoryProjects = useMemo(
     () => filterProjectsByState(projects, trajectoryStates),
@@ -241,7 +245,7 @@ export function ProjectsPage() {
 
               <Card>
                 <CardHeader className="border-b">
-                  <CardTitle>Projects</CardTitle>
+                  <CardTitle>Project details</CardTitle>
                   <CardAction>
                     <div className="w-52">
                       <ProjectStateFilter
@@ -252,7 +256,6 @@ export function ProjectsPage() {
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <ProjectCostChart projects={chartProjects} />
                   <ProjectsTable
                     projects={visibleProjects}
                     selectedProjectId={selectedProjectId}
@@ -295,6 +298,24 @@ export function ProjectsPage() {
                 </CardHeader>
                 <CardContent>
                   <ProjectDueDateTrajectory projects={trajectoryProjects} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Project costs</CardTitle>
+                  <CardAction>
+                    <div className="w-52">
+                      <ProjectStateFilter
+                        id="cost-state-filter"
+                        selected={costStates}
+                        onChange={setCostStates}
+                      />
+                    </div>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <ProjectCostChart projects={chartProjects} />
                 </CardContent>
               </Card>
 
