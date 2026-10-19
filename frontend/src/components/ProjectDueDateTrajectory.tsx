@@ -4,12 +4,31 @@ import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
 import { tooltip } from '@tanstack/charts/tooltip'
-import { useMemo } from 'react'
+import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useTimezone } from '../hooks/useAppSettings'
 import { formatCalendarDate, formatDateTime } from '../lib/format'
 import { projectStateKey } from '../lib/projectState'
 import { isoDateInTimeZone } from '../lib/timezone'
 import type { ProjectDueDateChangeOut, ProjectOut } from '../types'
+
+type TrajectorySortKey = 'name' | 'start' | 'due'
+type TrajectorySortDirection = 'asc' | 'desc'
+
+const SORT_OPTIONS: { value: TrajectorySortKey; label: string }[] = [
+  { value: 'name', label: 'Project name' },
+  { value: 'start', label: 'Start date' },
+  { value: 'due', label: 'Current due date' },
+]
 
 const COLOR_OPEN_FILL = 'var(--card)'
 const COLOR_OPEN_STROKE = 'var(--foreground)'
@@ -86,8 +105,43 @@ function axisLabel(name: string): string {
   return name.length > NAME_MAX ? `${name.slice(0, NAME_MAX)}…` : name
 }
 
+/** Latest due date the chart marks with D, falling back to the stored target date. */
+function currentDueMs(project: ProjectOut): number | null {
+  const dates = dueDates(project.due_date_history)
+  for (let index = dates.length - 1; index >= 0; index -= 1) {
+    const at = calendarMs(dates[index]?.date ?? null)
+    if (at !== null) return at
+  }
+  return calendarMs(project.target_date)
+}
+
+function compareProjects(
+  left: ProjectOut,
+  right: ProjectOut,
+  key: TrajectorySortKey,
+  direction: TrajectorySortDirection,
+): number {
+  const nameOrder =
+    left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) || left.id - right.id
+  if (key === 'name') return direction === 'asc' ? nameOrder : -nameOrder
+
+  const leftMs = key === 'start' ? calendarMs(left.start_date) : currentDueMs(left)
+  const rightMs = key === 'start' ? calendarMs(right.start_date) : currentDueMs(right)
+  if (leftMs === null && rightMs === null) return nameOrder
+  if (leftMs === null) return 1
+  if (rightMs === null) return -1
+  if (leftMs === rightMs) return nameOrder
+  const delta = leftMs - rightMs
+  return direction === 'asc' ? delta : -delta
+}
+
 function chartHeight(count: number): number {
   return Math.max(160, count * 36 + 56)
+}
+
+function sortDirectionLabel(key: TrajectorySortKey, direction: TrajectorySortDirection): string {
+  if (key === 'name') return direction === 'asc' ? 'A to Z' : 'Z to A'
+  return direction === 'asc' ? 'Earliest first' : 'Latest first'
 }
 
 /** Every due date the project has been given, in the order they were set. */
@@ -245,21 +299,77 @@ function TrajectoryTooltip({
   )
 }
 
+function TrajectorySortControls({
+  sortKey,
+  direction,
+  onSortKeyChange,
+  onDirectionChange,
+}: {
+  sortKey: TrajectorySortKey
+  direction: TrajectorySortDirection
+  onSortKeyChange: (key: TrajectorySortKey) => void
+  onDirectionChange: (direction: TrajectorySortDirection) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <Label htmlFor="trajectory-sort" className="font-normal text-muted-foreground">
+        Sort
+      </Label>
+      <div className="w-48">
+        <Select
+          items={SORT_OPTIONS}
+          value={sortKey}
+          onValueChange={(next) => {
+            if (next === 'name' || next === 'start' || next === 'due') onSortKeyChange(next)
+          }}
+        >
+          <SelectTrigger id="trajectory-sort" className="w-full" aria-label="Sort by">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        aria-label={sortDirectionLabel(sortKey, direction)}
+        title={sortDirectionLabel(sortKey, direction)}
+        onClick={() => onDirectionChange(direction === 'asc' ? 'desc' : 'asc')}
+      >
+        {direction === 'asc' ? <ArrowUpIcon /> : <ArrowDownIcon />}
+      </Button>
+    </div>
+  )
+}
+
 export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] }) {
   const timeZone = useTimezone()
+  const [sortKey, setSortKey] = useState<TrajectorySortKey>('name')
+  const [direction, setDirection] = useState<TrajectorySortDirection>('asc')
   // Today's calendar date in the configured timezone, expressed in the same
   // UTC-midnight millis the chart maps due dates to so the line aligns.
   const today = useMemo(() => {
     const iso = isoDateInTimeZone(new Date().toISOString(), timeZone)
     return calendarMs(iso)
   }, [timeZone])
+  const sortedProjects = useMemo(
+    () => [...projects].sort((left, right) => compareProjects(left, right, sortKey, direction)),
+    [direction, projects, sortKey],
+  )
   const series = useMemo(
     () =>
-      projects.flatMap((project) => {
+      sortedProjects.flatMap((project) => {
         const trajectory = trajectoryFor(project)
         return trajectory ? [trajectory] : []
       }),
-    [projects],
+    [sortedProjects],
   )
   const stops = useMemo(() => series.flatMap((item) => item.stops), [series])
   const segments = useMemo(() => series.flatMap((item) => item.segments), [series])
@@ -293,6 +403,9 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
       labels.set(stop.key, stop.label)
       order.push(stop.key)
     }
+    // The y scale maps the first domain value to the bottom of the plot.
+    // `order` is top-to-bottom, so reverse it to keep the first sorted row on top.
+    order.reverse()
     // Only draw the reference line when today falls inside the padded domain;
     // otherwise it would paint outside the plot rectangle.
     const todayMark =
@@ -426,19 +539,28 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
       <p className="text-sm text-muted-foreground">No projects match the current state filter.</p>
     )
   }
-  if (stops.length === 0 || definition === null) {
-    return <p className="text-sm text-muted-foreground">No due dates to plot.</p>
-  }
 
   return (
-    <Chart
-      definition={definition}
-      height={chartHeight(orderCount(stops))}
-      ariaLabel="Due date trajectory"
-      renderTooltipBody={({ points }) => (
-        <TrajectoryTooltip points={points} timeZone={timeZone} />
+    <div className="flex flex-col gap-3">
+      <TrajectorySortControls
+        sortKey={sortKey}
+        direction={direction}
+        onSortKeyChange={setSortKey}
+        onDirectionChange={setDirection}
+      />
+      {stops.length === 0 || definition === null ? (
+        <p className="text-sm text-muted-foreground">No due dates to plot.</p>
+      ) : (
+        <Chart
+          definition={definition}
+          height={chartHeight(orderCount(stops))}
+          ariaLabel="Due date trajectory"
+          renderTooltipBody={({ points }) => (
+            <TrajectoryTooltip points={points} timeZone={timeZone} />
+          )}
+        />
       )}
-    />
+    </div>
   )
 }
 
