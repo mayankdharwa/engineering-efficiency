@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '../api'
 import { IssuesTable } from '../components/IssuesTable'
+import { PersonLoadChart } from '../components/PersonLoadChart'
 import { ProjectCostChart } from '../components/ProjectCostChart'
 import { ProjectDueDateTrajectory } from '../components/ProjectDueDateTrajectory'
 import { ProjectStateFilter } from '../components/ProjectStateFilter'
@@ -77,6 +78,11 @@ export function ProjectsPage() {
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects(selectedTeamId),
     queryFn: () => api.listProjects(selectedTeamId as number),
+    enabled: selectedTeamId !== null,
+  })
+  const cycleQuery = useQuery({
+    queryKey: queryKeys.cycle(selectedTeamId),
+    queryFn: () => api.getCycleSettings(selectedTeamId as number),
     enabled: selectedTeamId !== null,
   })
   const projects = projectsQuery.data ?? []
@@ -274,6 +280,38 @@ export function ProjectsPage() {
                         : undefined
                     }
                   />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Who is on what</CardTitle>
+                  <CardDescription>
+                    Counted people on the current cycle. The filled part of each bar
+                    is points already done. The lighter part is still open.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {cycleQuery.isLoading ? (
+                    <Skeleton className="h-40 w-full" />
+                  ) : cycleQuery.isError ? (
+                    <p className="text-sm text-destructive">{cycleQuery.error.message}</p>
+                  ) : (
+                    <PersonLoadChart
+                      projects={projects}
+                      countedPeople={(cycleQuery.data?.members ?? [])
+                        .filter((member) => member.counts_toward_capacity)
+                        .map((member) => ({
+                          name: member.name,
+                          groupName: member.group_name,
+                          groupColor:
+                            member.group_id == null
+                              ? null
+                              : (cycleQuery.data?.groups.find((group) => group.id === member.group_id)
+                                  ?.color ?? null),
+                        }))}
+                    />
+                  )}
                 </CardContent>
               </Card>
 

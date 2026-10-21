@@ -17,8 +17,14 @@ import {
 } from '@/components/ui/tooltip'
 import { useTimezone } from '../hooks/useAppSettings'
 import { DEFAULT_POINTS_PER_DAY } from '../lib/capacity'
-import { formatCalendarDate, formatMoney, formatPercent, formatPoints } from '../lib/format'
-import { calendarDaysLate, weekdaysUntil } from '../lib/timezone'
+import { formatCalendarDate, formatPercent, formatPoints } from '../lib/format'
+import {
+  calculatedProjectDueDate,
+  dueDateOffsetWorkingDays,
+  formatWorkingDayOffset,
+  workingDaysForPoints,
+} from '../lib/projectSchedule'
+import { calendarDaysLate, parseIsoDate, weekdaysUntil } from '../lib/timezone'
 import { badgeVariantForState } from '../lib/issueState'
 import {
   formatProjectHealth,
@@ -34,6 +40,27 @@ const helper = createColumnHelper<typeof appTableFeatures, ProjectOut>()
 const DONE_PERCENT_DIGITS = 1
 const COMPLETE_TONE = 'text-emerald-600 dark:text-emerald-400'
 const ALERT_TONE = 'text-amber-500 dark:text-amber-400'
+const LATE_TONE = 'text-red-700 dark:text-red-400'
+const DUE_OFFSET_GREEN_DAYS = 2
+const DUE_OFFSET_ORANGE_DAYS = 7
+
+/** ±2 working days is on estimate. Beyond that, 3–7 is a warning and 8+ is late. */
+function calculatedDueTone(offset: number): string {
+  const days = Math.abs(offset)
+  if (days <= DUE_OFFSET_GREEN_DAYS) return COMPLETE_TONE
+  if (days <= DUE_OFFSET_ORANGE_DAYS) return ALERT_TONE
+  return LATE_TONE
+}
+
+function calculatedDueExplanation(offset: number): string | null {
+  if (offset < 0) {
+    return 'Before the due date: points may be missing, or the due date includes a release buffer.'
+  }
+  if (offset > 0) {
+    return 'After the due date: the points exceed the estimate, so the project could be delayed.'
+  }
+  return null
+}
 
 function doneRatio(done: number, total: number): number | null {
   if (total <= 0) return null
@@ -54,12 +81,25 @@ function isStartedState(state: string | null): boolean {
   return projectStateKey(state) === 'started'
 }
 
+function calendarSortValue(value: string | null): number {
+  const parsed = parseIsoDate(value)
+  if (!parsed) return Number.POSITIVE_INFINITY
+  return Date.UTC(parsed.year, parsed.month - 1, parsed.day)
+}
+
 function dueDateSortValue(project: ProjectOut): number {
   if (!isStartedState(project.state)) return Number.POSITIVE_INFINITY
   if (!project.target_date) return Number.NEGATIVE_INFINITY
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(project.target_date.trim())
-  if (!match) return Number.POSITIVE_INFINITY
-  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return calendarSortValue(project.target_date)
+}
+
+function dueOffsetSortValue(project: ProjectOut): number | undefined {
+  if (isCompletedState(project.state)) return undefined
+  const offset = dueDateOffsetWorkingDays(
+    calculatedProjectDueDate(project.start_date, project.points),
+    project.target_date,
+  )
+  return offset === null ? undefined : offset
 }
 
 /** Displayed Done percent; missing totals sort last. */
@@ -67,10 +107,6 @@ function doneSortValue(project: ProjectOut): number | undefined {
   const ratio = doneRatio(project.done_points, project.points)
   if (ratio === null || Number.isNaN(ratio)) return undefined
   return Number((ratio * 100).toFixed(DONE_PERCENT_DIGITS))
-}
-
-function isProjectSettled(project: ProjectOut): boolean {
-  return isPointsComplete(project.done_points, project.points) && isCompletedState(project.state)
 }
 
 function ProjectDoneCell({
@@ -203,6 +239,70 @@ function ProjectDueDateCell({
   return <span className="tabular-nums text-muted-foreground">{formattedDate}</span>
 }
 
+function ProjectCalculatedDueCell({
+  startDate,
+  points,
+  targetDate,
+  unestimatedIssues,
+  state,
+}: {
+  startDate: string | null
+  points: number
+  targetDate: string | null
+  unestimatedIssues: number
+  state: string | null
+}) {
+  if (isCompletedState(state)) {
+    return (
+      <Tooltip>
+        <TooltipTrigger delay={200} className="cursor-default text-muted-foreground">
+          —
+        </TooltipTrigger>
+        <TooltipContent>Not calculated for completed projects</TooltipContent>
+      </Tooltip>
+    )
+  }
+  const due = calculatedProjectDueDate(startDate, points)
+  if (!due || !startDate) {
+    return <span className="text-muted-foreground">—</span>
+  }
+  const offset = dueDateOffsetWorkingDays(due, targetDate)
+  const workingDays = workingDaysForPoints(points)
+  const tone = offset === null ? 'text-muted-foreground' : calculatedDueTone(offset)
+  const explanation = offset === null ? null : calculatedDueExplanation(offset)
+  return (
+    <Tooltip>
+      <TooltipTrigger delay={200} className={`cursor-default tabular-nums font-medium ${tone}`}>
+        {offset === null ? formatCalendarDate(due) : formatWorkingDayOffset(offset)}
+      </TooltipTrigger>
+      <TooltipContent>
+        <span className="block">Calculated Due Date</span>
+        <span className="block font-medium tabular-nums">{formatCalendarDate(due)}</span>
+        <span className="mt-0.5 block text-background/70">
+          {formatCalendarDate(startDate)} + {formatPoints(workingDays)} working{' '}
+          {workingDays === 1 ? 'day' : 'days'} ({formatPoints(points)} pts ÷{' '}
+          {formatPoints(DEFAULT_POINTS_PER_DAY)})
+        </span>
+        {offset !== null && targetDate ? (
+          <span className="block text-background/70">
+            Due {formatCalendarDate(targetDate)} {offset >= 0 ? '+' : '−'}{' '}
+            {Math.abs(offset)} working {Math.abs(offset) === 1 ? 'day' : 'days'}
+          </span>
+        ) : (
+          <span className="block text-background/70">No due date to compare</span>
+        )}
+        {explanation ? <span className="mt-0.5 block">{explanation}</span> : null}
+        {unestimatedIssues > 0 ? (
+          <span className="mt-0.5 block text-background/70">
+            {unestimatedIssues} unestimated{' '}
+            {unestimatedIssues === 1 ? 'issue is' : 'issues are'} not included
+          </span>
+        ) : null}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function ProjectHealthCell({
   health,
   expectedDonePoints,
@@ -313,12 +413,39 @@ function createColumns(
         return <Badge variant={badgeVariantForState(value)}>{formatProjectState(value)}</Badge>
       },
     }),
+    helper.accessor((row) => calendarSortValue(row.start_date), {
+      id: 'start_date',
+      header: 'Start Date',
+      cell: (ctx) => {
+        const startDate = ctx.row.original.start_date
+        if (!startDate) return <span className="text-muted-foreground">—</span>
+        return (
+          <span className="tabular-nums text-muted-foreground">
+            {formatCalendarDate(startDate)}
+          </span>
+        )
+      },
+    }),
     helper.accessor((row) => dueDateSortValue(row), {
       id: 'due_date',
       header: 'Due Date',
       cell: (ctx) => (
         <ProjectDueDateCell
           targetDate={ctx.row.original.target_date}
+          state={ctx.row.original.state}
+        />
+      ),
+    }),
+    helper.accessor((row) => dueOffsetSortValue(row), {
+      id: 'calculated_due_date',
+      header: 'Calculated Due',
+      sortUndefined: 'last',
+      cell: (ctx) => (
+        <ProjectCalculatedDueCell
+          startDate={ctx.row.original.start_date}
+          points={ctx.row.original.points}
+          targetDate={ctx.row.original.target_date}
+          unestimatedIssues={ctx.row.original.unestimated_issues}
           state={ctx.row.original.state}
         />
       ),
@@ -358,30 +485,6 @@ function createColumns(
           />
         )
       },
-    }),
-    helper.accessor((row) => row.incurred_cost, {
-      id: 'incurred_cost',
-      header: 'Incurred Cost',
-      cell: (ctx) => {
-        const project = ctx.row.original
-        if (isProjectSettled(project)) {
-          return <span className={COMPLETE_TONE}>Full</span>
-        }
-        return (
-          <span className="tabular-nums">
-            {formatMoney(ctx.getValue(), project.currency)}
-          </span>
-        )
-      },
-    }),
-    helper.accessor((row) => row.cost, {
-      id: 'cost',
-      header: 'Total Cost',
-      cell: (ctx) => (
-        <span className="tabular-nums">
-          {formatMoney(ctx.getValue(), ctx.row.original.currency)}
-        </span>
-      ),
     }),
   ]
 }
