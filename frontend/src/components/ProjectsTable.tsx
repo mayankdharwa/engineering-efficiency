@@ -82,6 +82,12 @@ function isStartedState(state: string | null): boolean {
   return projectStateKey(state) === 'started'
 }
 
+/** In progress and planned projects are expected to have a start date. */
+function expectsStartDate(state: string | null): boolean {
+  const key = projectStateKey(state)
+  return key === 'started' || key === 'planned'
+}
+
 function calendarSortValue(value: string | null): number {
   const parsed = parseIsoDate(value)
   if (!parsed) return Number.POSITIVE_INFINITY
@@ -418,8 +424,12 @@ function createColumns(
       id: 'start_date',
       header: 'Start Date',
       cell: (ctx) => {
-        const startDate = ctx.row.original.start_date
+        const project = ctx.row.original
+        const startDate = project.start_date
         if (!startDate) {
+          if (!expectsStartDate(project.state)) {
+            return <span className="text-muted-foreground">—</span>
+          }
           return (
             <Tooltip>
               <TooltipTrigger
