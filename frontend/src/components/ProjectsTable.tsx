@@ -40,6 +40,7 @@ const helper = createColumnHelper<typeof appTableFeatures, ProjectOut>()
 const DONE_PERCENT_DIGITS = 1
 const COMPLETE_TONE = 'text-emerald-600 dark:text-emerald-400'
 const ALERT_TONE = 'text-amber-500 dark:text-amber-400'
+const MISSING_START_TONE = 'text-red-600 dark:text-red-400'
 const LATE_TONE = 'text-red-700 dark:text-red-400'
 const DUE_OFFSET_GREEN_DAYS = 2
 const DUE_OFFSET_ORANGE_DAYS = 7
@@ -418,7 +419,19 @@ function createColumns(
       header: 'Start Date',
       cell: (ctx) => {
         const startDate = ctx.row.original.start_date
-        if (!startDate) return <span className="text-muted-foreground">—</span>
+        if (!startDate) {
+          return (
+            <Tooltip>
+              <TooltipTrigger
+                delay={200}
+                className={`inline-flex justify-center ${MISSING_START_TONE}`}
+              >
+                <TriangleAlertIcon className="size-4" aria-label="Start date is missing" />
+              </TooltipTrigger>
+              <TooltipContent>Start date is missing</TooltipContent>
+            </Tooltip>
+          )
+        }
         return (
           <span className="tabular-nums text-muted-foreground">
             {formatCalendarDate(startDate)}
