@@ -19,6 +19,7 @@ import { IssuesTable } from '../components/IssuesTable'
 import { PersonLoadChart } from '../components/PersonLoadChart'
 import { ProjectCostChart } from '../components/ProjectCostChart'
 import { ProjectDueDateTrajectory } from '../components/ProjectDueDateTrajectory'
+import { ProjectSpanChart } from '../components/ProjectSpanChart'
 import { ProjectStateFilter } from '../components/ProjectStateFilter'
 import { ProjectsTable } from '../components/ProjectsTable'
 import { TeamPicker } from '../components/TeamPicker'
@@ -66,6 +67,9 @@ export function ProjectsPage() {
   const [trajectoryStates, setTrajectoryStates] = useState<Set<string>>(
     () => new Set(DEFAULT_PROJECT_STATES),
   )
+  const [spanStates, setSpanStates] = useState<Set<string>>(
+    () => new Set(DEFAULT_PROJECT_STATES),
+  )
   const [costStates, setCostStates] = useState<Set<string>>(
     () => new Set(DEFAULT_PROJECT_STATES),
   )
@@ -102,6 +106,10 @@ export function ProjectsPage() {
   const trajectoryProjects = useMemo(
     () => filterProjectsByState(projects, trajectoryStates),
     [projects, trajectoryStates],
+  )
+  const spanProjects = useMemo(
+    () => filterProjectsByState(projects, spanStates),
+    [projects, spanStates],
   )
   const selectedProject =
     visibleProjects.find((project) => project.id === selectedProjectId) ?? null
@@ -336,6 +344,41 @@ export function ProjectsPage() {
                 </CardHeader>
                 <CardContent>
                   <ProjectDueDateTrajectory projects={trajectoryProjects} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Project Duration vs Man Day Consumption</CardTitle>
+                  <CardDescription>
+                    Project Duration is the gray bar: weekdays from the start date
+                    through the end date. Man Days is the outlined bar on top, grouped
+                    by team. White is points with no team. A check means the project
+                    is completed. Projects missing either date are left out.
+                  </CardDescription>
+                  <CardAction>
+                    <div className="w-52">
+                      <ProjectStateFilter
+                        id="span-state-filter"
+                        selected={spanStates}
+                        onChange={setSpanStates}
+                      />
+                    </div>
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  {cycleQuery.isLoading ? (
+                    <Skeleton className="h-40 w-full" />
+                  ) : (
+                    <ProjectSpanChart
+                      projects={spanProjects}
+                      members={(cycleQuery.data?.members ?? []).map((member) => ({
+                        name: member.name,
+                        groupId: member.group_id,
+                      }))}
+                      groups={cycleQuery.data?.groups ?? []}
+                    />
+                  )}
                 </CardContent>
               </Card>
 

@@ -1,5 +1,5 @@
-import { DEFAULT_POINTS_PER_DAY } from './capacity'
-import { parseIsoDate } from './timezone'
+import { DEFAULT_POINTS_PER_DAY } from './capacity.ts'
+import { parseIsoDate } from './timezone.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -88,6 +88,30 @@ export function signedWorkingDaysBetween(
     if (isWeekday(cursor)) days += step
   }
   return days
+}
+
+/**
+ * Weekdays from `startDate` through `dueDate`, counting a weekday endpoint.
+ *
+ * This is the effort that finishes on `dueDate` when work starts on
+ * `startDate`, matching `addWorkingDays`. The same weekday spans 1. A weekend
+ * adds nothing, so Saturday through Sunday is 0. The result is negative when
+ * the due date is earlier than the start date.
+ */
+export function workingDaysThrough(startDate: string, dueDate: string): number | null {
+  const start = parseIsoDate(startDate)
+  const due = parseIsoDate(dueDate)
+  if (!start || !due) return null
+  const startMs = utcMidnight(start.year, start.month, start.day)
+  const dueMs = utcMidnight(due.year, due.month, due.day)
+  const earlier = Math.min(startMs, dueMs)
+  const later = Math.max(startMs, dueMs)
+  let days = 0
+  for (let cursor = earlier; cursor <= later; cursor += MS_PER_DAY) {
+    if (isWeekday(cursor)) days += 1
+  }
+  if (days === 0 || dueMs >= startMs) return days
+  return -days
 }
 
 /**
