@@ -517,15 +517,46 @@ def _replace_due_date_history(
             )
 
 
+def _remote_project_issues(
+    client: LinearClient, team: Team, remote_projects: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Issues on this team's projects, including ones owned by other teams.
+
+    ``team.issues`` only returns issues whose team is this one. Assigning an
+    issue to someone on another team moves it to that team, so it disappears
+    from this query while staying on the project. Those issues are loaded
+    from each project and merged in.
+    """
+    issues = list(client.team_project_issues(team.linear_id))
+    seen = {issue.get("id") for issue in issues if issue.get("id")}
+    fetch = getattr(client, "project_issues", None)
+    if fetch is None:
+        return issues
+    for project in remote_projects:
+        if _is_archived(project):
+            continue
+        project_id = project.get("id")
+        if not project_id:
+            continue
+        for issue in fetch(project_id) or []:
+            issue_id = issue.get("id")
+            if not issue_id or issue_id in seen:
+                continue
+            seen.add(issue_id)
+            issues.append(issue)
+    return issues
+
+
 def sync_team_projects(db: Session, client: LinearClient, team: Team) -> ProjectSyncSummary:
     """Download the team's Linear projects and their issues.
 
     Cycle ``issues`` rows are left alone. Project issues replace the previous
     project snapshot for this team so cost always reflects Linear's current
-    project membership, including work that spans cycles.
+    project membership, including work that spans cycles and issues owned by
+    other teams on the same project.
     """
     remote_projects = client.team_projects(team.linear_id)
-    remote_issues = client.team_project_issues(team.linear_id)
+    remote_issues = _remote_project_issues(client, team, remote_projects)
     issues = [remote for remote in remote_issues if not remote.get("parent")]
 
     now = utcnow()

@@ -132,15 +132,7 @@ query ProjectHistory($projectId: String!, $after: String) {
 }
 """
 
-TEAM_PROJECT_ISSUES_QUERY = """
-query TeamProjectIssues($teamId: String!, $after: String) {
-  team(id: $teamId) {
-    issues(
-      first: 100
-      after: $after
-      filter: { project: { null: false } }
-    ) {
-      nodes {
+_PROJECT_ISSUE_FIELDS = """
         id
         identifier
         title
@@ -153,11 +145,36 @@ query TeamProjectIssues($teamId: String!, $after: String) {
         assignee { id name displayName }
         project { id name archivedAt }
         parent { id }
-      }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-}
+"""
+
+TEAM_PROJECT_ISSUES_QUERY = f"""
+query TeamProjectIssues($teamId: String!, $after: String) {{
+  team(id: $teamId) {{
+    issues(
+      first: 100
+      after: $after
+      filter: {{ project: {{ null: false }} }}
+    ) {{
+      nodes {{
+{_PROJECT_ISSUE_FIELDS}
+      }}
+      pageInfo {{ hasNextPage endCursor }}
+    }}
+  }}
+}}
+"""
+
+PROJECT_ISSUES_QUERY = f"""
+query ProjectIssues($projectId: String!, $after: String) {{
+  project(id: $projectId) {{
+    issues(first: 100, after: $after) {{
+      nodes {{
+{_PROJECT_ISSUE_FIELDS}
+      }}
+      pageInfo {{ hasNextPage endCursor }}
+    }}
+  }}
+}}
 """
 
 TEAM_MEMBERS_QUERY = """
@@ -332,20 +349,44 @@ class LinearClient:
             after = page.get("endCursor")
 
     def team_project_issues(self, team_linear_id: str) -> list[dict[str, Any]]:
-        """Return the team's issues that belong to a Linear project."""
+        """Return this team's issues that belong to a Linear project.
+
+        Issues owned by another team on the same project are not included.
+        Load those with ``project_issues``.
+        """
+        return self._issue_pages(
+            TEAM_PROJECT_ISSUES_QUERY, {"teamId": team_linear_id}, "team"
+        )
+
+    def project_issues(self, project_linear_id: str) -> list[dict[str, Any]]:
+        """Return every issue on a project, including other teams' issues.
+
+        Linear keeps an issue on the assignee's team. ``team.issues`` therefore
+        drops project work assigned to someone on a different team, while the
+        project itself still lists it.
+        """
+        return self._issue_pages(
+            PROJECT_ISSUES_QUERY, {"projectId": project_linear_id}, "project"
+        )
+
+    def _issue_pages(
+        self, query: str, variables: dict[str, Any], root_key: str
+    ) -> list[dict[str, Any]]:
         issues: list[dict[str, Any]] = []
         after: str | None = None
+        seen_cursors: set[str] = set()
         while True:
-            data = self._post(
-                TEAM_PROJECT_ISSUES_QUERY, {"teamId": team_linear_id, "after": after}
-            )
-            team = data.get("team") or {}
-            connection = team.get("issues") or {}
+            data = self._post(query, {**variables, "after": after})
+            root = data.get(root_key) or {}
+            connection = root.get("issues") or {}
             issues.extend(connection.get("nodes") or [])
             page = connection.get("pageInfo") or {}
             if not page.get("hasNextPage"):
                 return issues
             after = page.get("endCursor")
+            if not after or after in seen_cursors:
+                return issues
+            seen_cursors.add(after)
 
 
 def _is_complexity_error(exc: LinearError) -> bool:

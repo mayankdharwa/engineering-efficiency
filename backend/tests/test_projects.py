@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.linear_client import (
     PROJECT_HISTORY_QUERY,
+    PROJECT_ISSUES_QUERY,
     TEAM_PROJECTS_QUERY,
     LinearClient,
     LinearError,
@@ -155,6 +156,58 @@ def test_sync_skips_sub_issues() -> None:
         assert summary.issues_synced == 1
         stored = list(db.scalars(select(ProjectIssue)).all())
         assert [row.linear_id for row in stored] == ["parent"]
+
+
+def test_sync_includes_issues_owned_by_another_team() -> None:
+    class _CrossTeamClient(_FakeProjectClient):
+        def project_issues(self, project_id: str) -> list[dict]:
+            assert project_id == "p1"
+            return [
+                {
+                    "id": "i-other",
+                    "identifier": "DES-4",
+                    "title": "Design work",
+                    "estimate": 2.0,
+                    "assignee": {"id": "u-other", "displayName": "Bea"},
+                    "project": {"id": "p1", "name": "Alpha"},
+                },
+                {
+                    "id": "i-child",
+                    "identifier": "DES-5",
+                    "title": "Nested design work",
+                    "estimate": 1.0,
+                    "parent": {"id": "i-other"},
+                    "project": {"id": "p1", "name": "Alpha"},
+                },
+                {
+                    "id": "i1",
+                    "identifier": "ENG-1",
+                    "title": "Work",
+                    "estimate": 4.0,
+                    "project": {"id": "p1", "name": "Alpha"},
+                },
+            ]
+
+    with _session() as db:
+        team = _add_team(db)
+        client = _CrossTeamClient(
+            [{"id": "p1", "name": "Alpha"}, {"id": "p-old", "name": "Gone", "archivedAt": "2026-01-01"}],
+            [
+                {
+                    "id": "i1",
+                    "identifier": "ENG-1",
+                    "title": "Work",
+                    "estimate": 4.0,
+                    "project": {"id": "p1", "name": "Alpha"},
+                }
+            ],
+        )
+        summary = sync_team_projects(db, client, team)
+        assert summary.issues_synced == 2
+        stored = list(db.scalars(select(ProjectIssue).order_by(ProjectIssue.identifier)).all())
+        assert [row.identifier for row in stored] == ["DES-4", "ENG-1"]
+        assert stored[0].assignee_name == "Bea"
+        assert stored[0].estimate == 2.0
 
 
 def test_sync_keeps_cycle_issues_untouched() -> None:
@@ -873,3 +926,39 @@ def test_team_projects_fetches_history_separately_when_query_is_too_complex() ->
     assert projects[0]["history"]["nodes"][0]["id"] == "h1"
     assert calls[0] == TEAM_PROJECTS_QUERY
     assert PROJECT_HISTORY_QUERY in calls
+
+
+def test_project_issues_pages_across_teams() -> None:
+    client = LinearClient("test-key")
+    calls: list[tuple[str, dict]] = []
+
+    def _post(query: str, variables: dict) -> dict:
+        calls.append((query, variables))
+        if variables.get("after") is None:
+            return {
+                "project": {
+                    "issues": {
+                        "nodes": [{"id": "i1", "identifier": "ENG-1"}],
+                        "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
+                    }
+                }
+            }
+        return {
+            "project": {
+                "issues": {
+                    "nodes": [{"id": "i2", "identifier": "DES-2"}],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+
+    client._post = _post  # type: ignore[method-assign]
+    try:
+        issues = client.project_issues("p1")
+    finally:
+        client.close()
+
+    assert [issue["identifier"] for issue in issues] == ["ENG-1", "DES-2"]
+    assert calls[0][0] == PROJECT_ISSUES_QUERY
+    assert calls[0][1]["projectId"] == "p1"
+    assert calls[1][1]["after"] == "cursor-1"
