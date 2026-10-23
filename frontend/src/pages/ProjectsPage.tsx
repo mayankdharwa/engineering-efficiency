@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -26,6 +27,7 @@ import { TeamPicker } from '../components/TeamPicker'
 import { useCanRefresh } from '../hooks/useAuth'
 import { formatMoney, formatPoints, formatRelative } from '../lib/format'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { durationExceedsManDays } from '../lib/projectSchedule'
 import {
   DEFAULT_PROJECT_STATES,
   filterProjectsByState,
@@ -70,6 +72,7 @@ export function ProjectsPage() {
   const [spanStates, setSpanStates] = useState<Set<string>>(
     () => new Set(DEFAULT_PROJECT_STATES),
   )
+  const [spanDurationExceeds, setSpanDurationExceeds] = useState(false)
   const [costStates, setCostStates] = useState<Set<string>>(
     () => new Set(DEFAULT_PROJECT_STATES),
   )
@@ -108,8 +111,13 @@ export function ProjectsPage() {
     [projects, trajectoryStates],
   )
   const spanProjects = useMemo(
-    () => filterProjectsByState(projects, spanStates),
-    [projects, spanStates],
+    () =>
+      filterProjectsByState(projects, spanStates).filter(
+        (project) =>
+          !spanDurationExceeds ||
+          durationExceedsManDays(project.start_date, project.target_date, project.points),
+      ),
+    [projects, spanStates, spanDurationExceeds],
   )
   const selectedProject =
     visibleProjects.find((project) => project.id === selectedProjectId) ?? null
@@ -357,12 +365,25 @@ export function ProjectsPage() {
                     is completed. Projects missing either date are left out.
                   </CardDescription>
                   <CardAction>
-                    <div className="w-52">
-                      <ProjectStateFilter
-                        id="span-state-filter"
-                        selected={spanStates}
-                        onChange={setSpanStates}
-                      />
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      <Label
+                        htmlFor="span-duration-exceeds"
+                        className="font-normal text-muted-foreground"
+                      >
+                        <Checkbox
+                          id="span-duration-exceeds"
+                          checked={spanDurationExceeds}
+                          onCheckedChange={(checked) => setSpanDurationExceeds(checked === true)}
+                        />
+                        Duration exceeds man days
+                      </Label>
+                      <div className="w-52">
+                        <ProjectStateFilter
+                          id="span-state-filter"
+                          selected={spanStates}
+                          onChange={setSpanStates}
+                        />
+                      </div>
                     </div>
                   </CardAction>
                 </CardHeader>

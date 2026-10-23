@@ -464,7 +464,7 @@ export function ProjectSpanChart({
 
   if (projects.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">No projects match the current state filter.</p>
+      <p className="text-sm text-muted-foreground">No projects match the current filters.</p>
     )
   }
 

@@ -126,6 +126,23 @@ export function dueDateOffsetWorkingDays(
   return signedWorkingDaysBetween(actualDueDate, calculatedDueDate)
 }
 
+/**
+ * Weekday span from start through due is longer than the man-days in `points`.
+ *
+ * This is the same comparison as the duration chart: calendar days versus
+ * points ÷ 2. A missing date, or an equal span, is false.
+ */
+export function durationExceedsManDays(
+  startDate: string | null | undefined,
+  dueDate: string | null | undefined,
+  points: number,
+): boolean {
+  if (!startDate || !dueDate) return false
+  const calendarDays = workingDaysThrough(startDate, dueDate)
+  if (calendarDays === null) return false
+  return calendarDays > workingDaysForPoints(points)
+}
+
 /** `+2 days`, `-5 days`, or `0 days`. */
 export function formatWorkingDayOffset(days: number): string {
   const unit = Math.abs(days) === 1 ? 'day' : 'days'

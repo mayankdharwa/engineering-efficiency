@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { addWorkingDays, workingDaysForPoints, workingDaysThrough } from './projectSchedule.ts'
+import {
+  addWorkingDays,
+  durationExceedsManDays,
+  workingDaysForPoints,
+  workingDaysThrough,
+} from './projectSchedule.ts'
 
 describe('workingDaysThrough', () => {
   it('counts weekdays from the start date through the due date', () => {
@@ -32,6 +37,21 @@ describe('workingDaysThrough', () => {
 
   it('returns null for a date that is not a calendar day', () => {
     assert.equal(workingDaysThrough('not-a-date', '2026-10-19'), null)
+  })
+})
+
+describe('durationExceedsManDays', () => {
+  it('is true only when the weekday span is longer than the estimate', () => {
+    // Monday 19 Oct 2026 through Friday 23 Oct 2026 is 5 days; 8 points is 4.
+    assert.equal(durationExceedsManDays('2026-10-19', '2026-10-23', 8), true)
+    assert.equal(durationExceedsManDays('2026-10-19', '2026-10-23', 10), false)
+    assert.equal(durationExceedsManDays('2026-10-19', '2026-10-23', 12), false)
+  })
+
+  it('is false when a date is missing or the due date is earlier', () => {
+    assert.equal(durationExceedsManDays(null, '2026-10-23', 1), false)
+    assert.equal(durationExceedsManDays('2026-10-19', null, 1), false)
+    assert.equal(durationExceedsManDays('2026-10-23', '2026-10-19', 1), false)
   })
 })
 
