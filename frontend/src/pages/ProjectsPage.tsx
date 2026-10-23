@@ -301,68 +301,14 @@ export function ProjectsPage() {
 
               <Card>
                 <CardHeader className="border-b">
-                  <CardTitle>Who is on what</CardTitle>
-                  <CardDescription>
-                    Counted people on the current cycle. The filled part of each bar
-                    is points already done. The lighter part is still open.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {cycleQuery.isLoading ? (
-                    <Skeleton className="h-40 w-full" />
-                  ) : cycleQuery.isError ? (
-                    <p className="text-sm text-destructive">{cycleQuery.error.message}</p>
-                  ) : (
-                    <PersonLoadChart
-                      projects={projects}
-                      countedPeople={(cycleQuery.data?.members ?? [])
-                        .filter((member) => member.counts_toward_capacity)
-                        .map((member) => ({
-                          name: member.name,
-                          groupName: member.group_name,
-                          groupColor:
-                            member.group_id == null
-                              ? null
-                              : (cycleQuery.data?.groups.find((group) => group.id === member.group_id)
-                                  ?.color ?? null),
-                        }))}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle>Due date trajectory</CardTitle>
-                  <CardDescription>
-                    Each bar runs from the start date to the due dates. Green is the
-                    start through the first due date, and amber is each later change.
-                    S is the start, D is the current due date, and open dots are
-                    earlier due dates. A check beside D means the project is completed.
-                  </CardDescription>
-                  <CardAction>
-                    <div className="w-52">
-                      <ProjectStateFilter
-                        id="trajectory-state-filter"
-                        selected={trajectoryStates}
-                        onChange={setTrajectoryStates}
-                      />
-                    </div>
-                  </CardAction>
-                </CardHeader>
-                <CardContent>
-                  <ProjectDueDateTrajectory projects={trajectoryProjects} />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="border-b">
                   <CardTitle>Project Duration vs Man Day Consumption</CardTitle>
                   <CardDescription>
                     Project Duration is the gray bar: weekdays from the start date
                     through the end date. Man Days is the outlined bar on top, grouped
-                    by team. White is points with no team. A check means the project
-                    is completed. Projects missing either date are left out.
+                    by team. White is points with no team. The number after each bar is
+                    the gap between duration and man days. A check after that number
+                    means the project is completed. Projects missing either date are
+                    left out.
                   </CardDescription>
                   <CardAction>
                     <div className="flex flex-wrap items-center justify-end gap-3">
@@ -398,6 +344,62 @@ export function ProjectsPage() {
                         groupId: member.group_id,
                       }))}
                       groups={cycleQuery.data?.groups ?? []}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Due date trajectory</CardTitle>
+                  <CardDescription>
+                    Each bar runs from the start date to the due dates. Green is the
+                    start through the first due date, and amber is each later change.
+                    S is the start, D is the current due date, and open dots are
+                    earlier due dates. A check beside D means the project is completed.
+                  </CardDescription>
+                  <CardAction>
+                    <div className="w-52">
+                      <ProjectStateFilter
+                        id="trajectory-state-filter"
+                        selected={trajectoryStates}
+                        onChange={setTrajectoryStates}
+                      />
+                    </div>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <ProjectDueDateTrajectory projects={trajectoryProjects} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Who is on what</CardTitle>
+                  <CardDescription>
+                    Counted people on the current cycle. The filled part of each bar
+                    is points already done. The lighter part is still open.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {cycleQuery.isLoading ? (
+                    <Skeleton className="h-40 w-full" />
+                  ) : cycleQuery.isError ? (
+                    <p className="text-sm text-destructive">{cycleQuery.error.message}</p>
+                  ) : (
+                    <PersonLoadChart
+                      projects={projects}
+                      countedPeople={(cycleQuery.data?.members ?? [])
+                        .filter((member) => member.counts_toward_capacity)
+                        .map((member) => ({
+                          name: member.name,
+                          groupName: member.group_name,
+                          groupColor:
+                            member.group_id == null
+                              ? null
+                              : (cycleQuery.data?.groups.find((group) => group.id === member.group_id)
+                                  ?.color ?? null),
+                        }))}
                     />
                   )}
                 </CardContent>

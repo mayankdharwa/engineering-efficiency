@@ -27,7 +27,13 @@ const COLOR_UNASSIGNED = 'var(--background)'
 const COLOR_OUTLINE = 'var(--foreground)'
 /** Same emerald check the trajectory chart draws beside a completed due date. */
 const COLOR_COMPLETE = 'var(--trajectory-complete)'
-const CHECK_OFFSET = 16
+const COLOR_DELTA = 'var(--muted-foreground)'
+/** Gap between the longer bar and the duration-minus-man-days label. */
+const DELTA_GAP = 8
+/** Gap between that label and the completed check. */
+const TICK_GAP = 6
+/** Pixel width reserved for the check glyph. */
+const CHECK_WIDTH = 14
 const FALLBACK_COLORS = [
   'var(--chart-1)',
   'var(--chart-2)',
@@ -101,6 +107,21 @@ function axisLabel(name: string): string {
 function formatDayCount(days: number): string {
   const unit = Math.abs(days) === 1 ? 'day' : 'days'
   return `${formatPoints(days)} ${unit}`
+}
+
+/** Absolute gap between duration and man days, such as `2 days` or `0.5 days`. */
+function formatDeltaDays(days: number): string {
+  const magnitude = formatPoints(Math.abs(days))
+  const unit = magnitude === '1' ? 'day' : 'days'
+  return `${magnitude} ${unit}`
+}
+
+function deltaDays(comparison: SpanComparison): number {
+  return comparison.calendarDays - comparison.estimateDays
+}
+
+function barEnd(comparison: SpanComparison): number {
+  return Math.max(comparison.calendarDays, comparison.estimateDays)
 }
 
 function comparisonFor(
@@ -182,11 +203,18 @@ function withLegendColors(
 function marksFor(
   comparisons: readonly SpanComparison[],
   legend: readonly LegendEntry[],
-): { span: SpanMark[]; groups: SpanMark[]; outlines: SpanMark[]; checks: SpanMark[] } {
+): {
+  span: SpanMark[]
+  groups: SpanMark[]
+  outlines: SpanMark[]
+  deltas: SpanMark[]
+  checks: SpanMark[]
+} {
   const seriesByKey = new Map(legend.map((entry) => [entry.key, entry.series]))
   const span: SpanMark[] = []
   const groups: SpanMark[] = []
   const outlines: SpanMark[] = []
+  const deltas: SpanMark[] = []
   const checks: SpanMark[] = []
   comparisons.forEach((comparison, index) => {
     const slices = withLegendColors(comparison.slices, legend)
@@ -226,8 +254,17 @@ function marksFor(
         groupKey: null,
       })
     }
+    const end = barEnd(comparison)
+    deltas.push({
+      ...painted,
+      series: SERIES_SPAN,
+      x1: end,
+      x2: end,
+      y1: index,
+      y2: index,
+      groupKey: null,
+    })
     if (comparison.completed) {
-      const end = Math.max(comparison.calendarDays, comparison.estimateDays)
       checks.push({
         ...painted,
         series: SERIES_SPAN,
@@ -239,7 +276,7 @@ function marksFor(
       })
     }
   })
-  return { span, groups, outlines, checks }
+  return { span, groups, outlines, deltas, checks }
 }
 
 function labelPositions(count: number): number[] {
@@ -279,6 +316,8 @@ function SpanTooltipBody({ points }: { points: readonly { datum: SpanMark }[] })
         <span className="text-right tabular-nums">{formatDayCount(datum.calendarDays)}</span>
         <span className="text-muted-foreground">Man Days</span>
         <span className="text-right tabular-nums">{formatDayCount(datum.estimateDays)}</span>
+        <span className="text-muted-foreground">Difference</span>
+        <span className="text-right tabular-nums">{formatDeltaDays(deltaDays(datum))}</span>
         {datum.slices.map((slice) => {
           const active = slice.key === datum.groupKey
           return (
@@ -354,6 +393,14 @@ export function ProjectSpanChart({
     () => leftMarginFor(comparisons.map((comparison) => comparison.label)),
     [comparisons],
   )
+  const marginRight = useMemo(() => {
+    const widest = comparisons.reduce((max, comparison) => {
+      const label = estimatedLabelWidth(formatDeltaDays(deltaDays(comparison)))
+      const check = comparison.completed ? TICK_GAP + CHECK_WIDTH : 0
+      return Math.max(max, label + check)
+    }, 0)
+    return Math.ceil(DELTA_GAP + widest + 8)
+  }, [comparisons])
 
   const definition = useMemo(
     () =>
@@ -390,11 +437,24 @@ export function ProjectSpanChart({
             strokeWidth: 1.25,
             key: (mark) => `${mark.key}-outline`,
           }),
+          text(marks.deltas, {
+            x: 'x2',
+            y: 'y1',
+            text: (mark) => formatDeltaDays(deltaDays(mark)),
+            anchor: 'start',
+            dx: DELTA_GAP,
+            fill: COLOR_DELTA,
+            fontSize: 11,
+            fontWeight: 500,
+            key: (mark) => `${mark.key}-delta`,
+          }),
           text(marks.checks, {
             x: 'x2',
             y: 'y1',
             text: () => '✓',
-            dx: CHECK_OFFSET,
+            anchor: 'start',
+            dx: (mark) =>
+              DELTA_GAP + estimatedLabelWidth(formatDeltaDays(deltaDays(mark))) + TICK_GAP,
             fill: COLOR_COMPLETE,
             fontSize: 13,
             fontWeight: 600,
@@ -433,8 +493,8 @@ export function ProjectSpanChart({
           legend: colorLegend({ placement: 'top' }),
         },
         // Top stays automatic so the legend keeps a gap above the bars.
-        // Right room keeps the completed check, drawn just past the longer bar, inside the chart.
-        margin: { left: marginLeft, right: 32, bottom: 44 },
+        // Right room keeps the day difference, then the completed check, inside the chart.
+        margin: { left: marginLeft, right: marginRight, bottom: 44 },
         tooltip: {
           use: tooltip,
           items: [
@@ -459,7 +519,7 @@ export function ProjectSpanChart({
           ],
         },
       }),
-    [colorDomain, colorRange, comparisons, labels, marginLeft, marks, xDomain, yDomain],
+    [colorDomain, colorRange, comparisons, labels, marginLeft, marginRight, marks, xDomain, yDomain],
   )
 
   if (projects.length === 0) {
