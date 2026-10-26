@@ -375,6 +375,7 @@ class ProjectRefreshResult(BaseModel):
     status: str
     projects_synced: int
     issues_synced: int
+    projects_skipped: int = 0
     message: str | None = None
 
 

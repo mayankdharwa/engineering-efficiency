@@ -14,7 +14,10 @@ from app.database import Base, get_db
 from app.linear_client import (
     PROJECT_HISTORY_QUERY,
     PROJECT_ISSUES_QUERY,
+    PROJECT_QUERY,
+    TEAM_PROJECT_ISSUES_QUERY,
     TEAM_PROJECTS_QUERY,
+    TEAM_PROJECTS_WITHOUT_HISTORY_QUERY,
     LinearClient,
     LinearError,
 )
@@ -36,7 +39,7 @@ from app.projects import (
     compute_team_project_costs,
     project_schedule_health,
 )
-from app.sync import sync_team_projects
+from app.sync import sync_project, sync_team_projects
 from tests.auth_helpers import authenticate
 
 
@@ -44,6 +47,9 @@ class _FakeProjectClient:
     def __init__(self, projects: list[dict], issues: list[dict]) -> None:
         self._projects = projects
         self._issues = issues
+
+    def team_project_summaries(self, team_id: str) -> list[dict]:
+        return self._projects
 
     def team_projects(self, team_id: str) -> list[dict]:
         return self._projects
@@ -126,14 +132,14 @@ def test_sync_upserts_replaces_and_drops_stale_projects() -> None:
         assert project.name == "Alpha renamed"
         assert project.state == "completed"
         replacements = list(db.scalars(select(ProjectIssue)).all())
-        assert [row.identifier for row in replacements] == ["ENG-2"]
+        assert [row.identifier for row in replacements] == ["ENG-1"]
 
 
 def test_sync_skips_sub_issues() -> None:
     with _session() as db:
         team = _add_team(db)
         client = _FakeProjectClient(
-            [{"id": "p1", "name": "Alpha"}],
+            [{"id": "p1", "name": "Alpha", "state": "started"}],
             [
                 {
                     "id": "parent",
@@ -191,7 +197,10 @@ def test_sync_includes_issues_owned_by_another_team() -> None:
     with _session() as db:
         team = _add_team(db)
         client = _CrossTeamClient(
-            [{"id": "p1", "name": "Alpha"}, {"id": "p-old", "name": "Gone", "archivedAt": "2026-01-01"}],
+                [
+                    {"id": "p1", "name": "Alpha", "state": "started"},
+                    {"id": "p-old", "name": "Gone", "archivedAt": "2026-01-01"},
+                ],
             [
                 {
                     "id": "i1",
@@ -272,7 +281,7 @@ def test_sync_skips_archived_projects() -> None:
                     "name": "Was live",
                     "archivedAt": "2026-01-01T00:00:00.000Z",
                 },
-                {"id": "p1", "name": "Active"},
+                {"id": "p1", "name": "Active", "state": "started"},
             ],
             [
                 {
@@ -580,6 +589,397 @@ def test_update_project_excluded() -> None:
     assert missing.status_code == 404
 
 
+def test_sync_leaves_completed_projects_unchanged() -> None:
+    with _session() as db:
+        team = _add_team(db)
+        done = Project(
+            team_id=team.id,
+            linear_id="p-done",
+            name="Done",
+            state="completed",
+            target_date="2026-04-01",
+            last_synced_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        finishing = Project(
+            team_id=team.id, linear_id="p-finish", name="Finishing", state="started"
+        )
+        live = Project(team_id=team.id, linear_id="p-live", name="Live", state="started")
+        stale = Project(team_id=team.id, linear_id="p-old", name="Old")
+        db.add_all([done, finishing, live, stale])
+        db.flush()
+        db.add_all(
+            [
+                ProjectIssue(
+                    team_id=team.id,
+                    project_id=done.id,
+                    linear_id="i-done",
+                    identifier="ENG-9",
+                    title="Old work",
+                    estimate=5.0,
+                    state_type="completed",
+                ),
+                ProjectIssue(
+                    team_id=team.id,
+                    project_id=finishing.id,
+                    linear_id="i-old-finish",
+                    identifier="ENG-8",
+                    title="Almost",
+                    estimate=1.0,
+                ),
+                ProjectDueDateChange(
+                    team_id=team.id,
+                    project_id=done.id,
+                    linear_id="h-old",
+                    changed_at=datetime(2026, 1, 2, tzinfo=UTC),
+                    from_date="2026-03-01",
+                    to_date="2026-04-01",
+                    raw={"targetDate": {"from": "2026-03-01", "to": "2026-04-01"}},
+                ),
+            ]
+        )
+        db.commit()
+
+        class _Client(_FakeProjectClient):
+            def __init__(self) -> None:
+                super().__init__(
+                    [
+                        {
+                            "id": "p-done",
+                            "name": "Done renamed",
+                            "state": "completed",
+                            "targetDate": "2026-08-01",
+                            "history": {
+                                "nodes": [{"id": "h-new", "createdAt": "2026-06-01T00:00:00Z"}],
+                                "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
+                            },
+                        },
+                        {
+                            "id": "p-finish",
+                            "name": "Finishing",
+                            "state": "completed",
+                            "history": {
+                                "nodes": [],
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            },
+                        },
+                        {
+                            "id": "p-live",
+                            "name": "Live renamed",
+                            "state": "started",
+                            "history": {
+                                "nodes": [],
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            },
+                        },
+                        {
+                            "id": "p-new",
+                            "name": "New",
+                            "state": "planned",
+                            "history": {
+                                "nodes": [],
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            },
+                        },
+                    ],
+                    [
+                        {
+                            "id": "i-done-new",
+                            "identifier": "ENG-99",
+                            "title": "Should not land on an already completed project",
+                            "estimate": 8.0,
+                            "project": {"id": "p-done", "name": "Done renamed"},
+                        },
+                        {
+                            "id": "i-finish",
+                            "identifier": "ENG-3",
+                            "title": "Final",
+                            "estimate": 2.0,
+                            "project": {"id": "p-finish", "name": "Finishing"},
+                        },
+                        {
+                            "id": "i-live",
+                            "identifier": "ENG-2",
+                            "title": "Live work",
+                            "estimate": 1.0,
+                            "project": {"id": "p-live", "name": "Live renamed"},
+                        },
+                    ],
+                )
+                self.project_calls: list[str] = []
+
+            def project_issues(self, project_id: str) -> list[dict]:
+                self.project_calls.append(project_id)
+                return []
+
+            def project_history(self, project_id: str, after: str | None = None) -> dict:
+                raise AssertionError(f"history fetched for {project_id}")
+
+        client = _Client()
+        summary = sync_team_projects(db, client, team)
+        assert summary.projects_skipped == 2
+        assert summary.projects_synced == 2
+        assert summary.issues_synced == 1
+        assert client.project_calls == ["p-live", "p-new"]
+
+        done_row = db.scalar(select(Project).where(Project.linear_id == "p-done"))
+        assert done_row is not None
+        assert done_row.name == "Done renamed"
+        assert done_row.state == "completed"
+        assert done_row.target_date == "2026-08-01"
+        assert done_row.last_synced_at == datetime(2026, 1, 1, tzinfo=UTC)
+        done_issues = list(
+            db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == done_row.id)).all()
+        )
+        assert [issue.identifier for issue in done_issues] == ["ENG-9"]
+        changes = list(
+            db.scalars(
+                select(ProjectDueDateChange).where(ProjectDueDateChange.project_id == done_row.id)
+            ).all()
+        )
+        assert [change.linear_id for change in changes] == ["h-old"]
+
+        finished = db.scalar(select(Project).where(Project.linear_id == "p-finish"))
+        assert finished is not None
+        assert finished.state == "completed"
+        finished_issues = list(
+            db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == finished.id)).all()
+        )
+        assert [issue.identifier for issue in finished_issues] == ["ENG-8"]
+        assert db.scalar(select(Project).where(Project.linear_id == "p-old")) is None
+
+        again = _FakeProjectClient(
+            [
+                {"id": "p-done", "name": "Done renamed", "state": "completed"},
+                {"id": "p-finish", "name": "Finishing renamed", "state": "completed"},
+                {"id": "p-live", "name": "Live renamed", "state": "started"},
+                {"id": "p-new", "name": "New", "state": "planned"},
+            ],
+            [
+                {
+                    "id": "i-finish-later",
+                    "identifier": "ENG-30",
+                    "title": "Too late",
+                    "project": {"id": "p-finish", "name": "Finishing renamed"},
+                }
+            ],
+        )
+        second = sync_team_projects(db, again, team)
+        assert second.projects_skipped == 2
+        kept = db.scalar(select(Project).where(Project.linear_id == "p-finish"))
+        assert kept is not None
+        assert kept.name == "Finishing renamed"
+        kept_issues = list(
+            db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == kept.id)).all()
+        )
+        assert [issue.identifier for issue in kept_issues] == ["ENG-8"]
+
+
+def test_sync_uses_linear_status_names_for_issue_refresh() -> None:
+    with _session() as db:
+        team = _add_team(db)
+        paused = Project(
+            team_id=team.id,
+            linear_id="p-paused",
+            name="Paused",
+            state="paused",
+        )
+        db.add(paused)
+        db.flush()
+        db.add(
+            ProjectIssue(
+                team_id=team.id,
+                project_id=paused.id,
+                linear_id="i-paused",
+                identifier="ENG-7",
+                title="Parked",
+                estimate=4.0,
+            )
+        )
+        db.commit()
+
+        class _Client(_FakeProjectClient):
+            def __init__(self) -> None:
+                super().__init__(
+                    [
+                        {
+                            "id": "p-paused",
+                            "name": "Paused",
+                            "state": "paused",
+                            "status": {"name": "Paused", "type": "paused"},
+                            "history": {
+                                "nodes": [{"id": "h-paused"}],
+                                "pageInfo": {"hasNextPage": True, "endCursor": "c1"},
+                            },
+                        },
+                        {
+                            "id": "p-now",
+                            "name": "Now",
+                            "state": "started",
+                            "status": {"name": "In Progress", "type": "started"},
+                            "history": {
+                                "nodes": [],
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            },
+                        },
+                        {
+                            "id": "p-plan",
+                            "name": "Plan",
+                            "state": "planned",
+                            "status": {"name": "Planned", "type": "planned"},
+                            "history": {
+                                "nodes": [],
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            },
+                        },
+                        {
+                            "id": "p-custom",
+                            "name": "Custom",
+                            "state": "started",
+                            "status": {"name": "Building", "type": "started"},
+                        },
+                    ],
+                    [
+                        {
+                            "id": "i-paused-new",
+                            "identifier": "ENG-70",
+                            "title": "Should stay out",
+                            "project": {"id": "p-paused"},
+                        },
+                        {
+                            "id": "i-now",
+                            "identifier": "ENG-1",
+                            "title": "Active",
+                            "estimate": 2.0,
+                            "project": {"id": "p-now"},
+                        },
+                        {
+                            "id": "i-plan",
+                            "identifier": "ENG-2",
+                            "title": "Upcoming",
+                            "estimate": 1.0,
+                            "project": {"id": "p-plan"},
+                        },
+                    ],
+                )
+                self.project_calls: list[str] = []
+
+            def project_issues(self, project_id: str) -> list[dict]:
+                self.project_calls.append(project_id)
+                return []
+
+            def project_history(self, project_id: str, after: str | None = None) -> dict:
+                raise AssertionError(f"history fetched for {project_id}")
+
+        client = _Client()
+        summary = sync_team_projects(db, client, team)
+        assert summary.projects_synced == 2
+        assert summary.projects_skipped == 2
+        assert summary.issues_synced == 2
+        assert client.project_calls == ["p-now", "p-plan"]
+
+        paused_row = db.scalar(select(Project).where(Project.linear_id == "p-paused"))
+        assert paused_row is not None
+        paused_issues = list(
+            db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == paused_row.id)).all()
+        )
+        assert [issue.identifier for issue in paused_issues] == ["ENG-7"]
+        custom = db.scalar(select(Project).where(Project.linear_id == "p-custom"))
+        assert custom is not None
+        assert custom.state == "started"
+        custom_issues = list(
+            db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == custom.id)).all()
+        )
+        assert custom_issues == []
+
+
+def test_sync_project_refreshes_one_completed_project() -> None:
+    with _session() as db:
+        team = _add_team(db)
+        done = Project(
+            team_id=team.id,
+            linear_id="p-done",
+            name="Done",
+            state="completed",
+            target_date="2026-04-01",
+        )
+        live = Project(team_id=team.id, linear_id="p-live", name="Live", state="started")
+        db.add_all([done, live])
+        db.flush()
+        db.add(
+            ProjectIssue(
+                team_id=team.id,
+                project_id=done.id,
+                linear_id="i-old",
+                identifier="ENG-9",
+                title="Old",
+                estimate=5.0,
+            )
+        )
+        db.add(
+            ProjectIssue(
+                team_id=team.id,
+                project_id=live.id,
+                linear_id="i-live",
+                identifier="ENG-1",
+                title="Stay",
+                estimate=1.0,
+            )
+        )
+        db.commit()
+
+        class _OneProject(_FakeProjectClient):
+            def project(self, project_id: str) -> dict:
+                assert project_id == "p-done"
+                return {
+                    "id": "p-done",
+                    "name": "Done updated",
+                    "state": "completed",
+                    "targetDate": "2026-09-01",
+                    "history": {
+                        "nodes": [
+                            {
+                                "id": "h1",
+                                "createdAt": "2026-05-01T00:00:00Z",
+                                "entries": {
+                                    "targetDate": {"from": "2026-04-01", "to": "2026-09-01"}
+                                },
+                            }
+                        ],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    },
+                }
+
+            def project_issues(self, project_id: str) -> list[dict]:
+                assert project_id == "p-done"
+                return [
+                    {
+                        "id": "i-new",
+                        "identifier": "ENG-10",
+                        "title": "Added later",
+                        "estimate": 3.0,
+                        "project": {"id": "p-done", "name": "Done updated"},
+                    }
+                ]
+
+        done_row = db.scalar(select(Project).where(Project.linear_id == "p-done"))
+        assert done_row is not None
+        summary = sync_project(db, _OneProject([], []), team, done_row)
+        assert summary.projects_synced == 1
+        assert summary.issues_synced == 1
+        assert done_row.name == "Done updated"
+        assert done_row.target_date == "2026-09-01"
+        refreshed = list(
+            db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == done_row.id)).all()
+        )
+        assert [issue.identifier for issue in refreshed] == ["ENG-10"]
+        live_issues = list(
+            db.scalars(select(ProjectIssue).where(ProjectIssue.linear_id == "i-live")).all()
+        )
+        assert len(live_issues) == 1
+        history = list(db.scalars(select(ProjectDueDateChange)).all())
+        assert [change.to_date for change in history] == ["2026-09-01"]
+
+
 def _health(
     points: float,
     done_points: float,
@@ -753,6 +1153,7 @@ def test_sync_stores_due_date_changes_and_replaces_them() -> None:
                 {
                     "id": "p1",
                     "name": "Alpha",
+                    "state": "started",
                     "targetDate": None,
                     "history": {
                         "nodes": [
@@ -809,6 +1210,7 @@ def test_sync_follows_due_date_history_pages() -> None:
                 {
                     "id": "p1",
                     "name": "Alpha",
+                    "state": "started",
                     "targetDate": "2026-05-01",
                     "history": {
                         "nodes": [
@@ -962,3 +1364,55 @@ def test_project_issues_pages_across_teams() -> None:
     assert calls[0][0] == PROJECT_ISSUES_QUERY
     assert calls[0][1]["projectId"] == "p1"
     assert calls[1][1]["after"] == "cursor-1"
+
+
+def test_project_queries_omit_completed_projects() -> None:
+    client = LinearClient("test-key")
+    calls: list[tuple[str, dict]] = []
+
+    def _post(query: str, variables: dict) -> dict:
+        calls.append((query, variables))
+        if query == TEAM_PROJECT_ISSUES_QUERY:
+            return {
+                "team": {
+                    "issues": {
+                        "nodes": [],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                }
+            }
+        if query == PROJECT_QUERY:
+            return {"project": {"id": "p1", "name": "Alpha", "state": "completed"}}
+        return {
+            "team": {
+                "projects": {
+                    "nodes": [],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+
+    client._post = _post  # type: ignore[method-assign]
+    try:
+        client.team_projects("team-1")
+        client.team_project_summaries("team-1")
+        client.team_project_issues("team-1")
+        assert client.project("p1") == {"id": "p1", "name": "Alpha", "state": "completed"}
+    finally:
+        client.close()
+
+    assert calls[0][0] == TEAM_PROJECTS_QUERY
+    assert calls[0][1]["filter"] == {
+        "status": {"name": {"in": ["Planned", "In Progress"]}}
+    }
+    assert calls[1][0] == TEAM_PROJECTS_WITHOUT_HISTORY_QUERY
+    assert calls[1][1]["filter"] is None
+    assert calls[2][0] == TEAM_PROJECT_ISSUES_QUERY
+    assert calls[2][1]["filter"] == {
+        "project": {
+            "null": False,
+            "status": {"name": {"in": ["Planned", "In Progress"]}},
+        }
+    }
+    assert calls[3][0] == PROJECT_QUERY
+    assert calls[3][1]["projectId"] == "p1"

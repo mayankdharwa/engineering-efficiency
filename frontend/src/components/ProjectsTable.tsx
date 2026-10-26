@@ -31,7 +31,12 @@ import {
   projectHealthClassName,
   projectHealthSortRank,
 } from '../lib/projectHealth'
-import { EXCLUDED_PROJECT_STATE, formatProjectState, projectStateKey } from '../lib/projectState'
+import {
+  EXCLUDED_PROJECT_STATE,
+  formatProjectState,
+  projectStateKey,
+  projectSyncsIssues,
+} from '../lib/projectState'
 import { appTableFeatures } from '../lib/table'
 import type { ProjectOut } from '../types'
 import { DataTable, type AppColumnDef } from './DataTable'
@@ -359,10 +364,14 @@ function ProjectHealthCell({
 
 function ProjectRowMenu({
   excluded,
+  manualSync,
   onToggleExcluded,
+  onSyncProject,
 }: {
   excluded: boolean
+  manualSync: boolean
   onToggleExcluded: () => void
+  onSyncProject?: () => void
 }) {
   return (
     <div
@@ -381,6 +390,9 @@ function ProjectRowMenu({
           <DropdownMenuItem onClick={onToggleExcluded}>
             {excluded ? 'Include' : 'Exclude'}
           </DropdownMenuItem>
+          {manualSync && onSyncProject ? (
+            <DropdownMenuItem onClick={onSyncProject}>Sync project</DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -389,6 +401,7 @@ function ProjectRowMenu({
 
 function createColumns(
   onToggleExcluded: (project: ProjectOut) => void,
+  onSyncProject: ((project: ProjectOut) => void) | undefined,
 ): AppColumnDef<ProjectOut>[] {
   return [
     helper.accessor('name', {
@@ -400,7 +413,11 @@ function createColumns(
           <div className="flex min-w-0 items-center gap-1">
             <ProjectRowMenu
               excluded={project.excluded}
+              manualSync={!projectSyncsIssues(project.state)}
               onToggleExcluded={() => onToggleExcluded(project)}
+              onSyncProject={
+                onSyncProject ? () => onSyncProject(project) : undefined
+              }
             />
             <span className="min-w-0 flex-1 truncate font-medium" title={ctx.getValue()}>
               {ctx.getValue()}
@@ -517,15 +534,20 @@ export function ProjectsTable({
   selectedProjectId,
   onSelect,
   onToggleExcluded,
+  onSyncProject,
   emptyMessage = 'Refresh this team to load projects.',
 }: {
   projects: ProjectOut[]
   selectedProjectId: number | null
   onSelect: (project: ProjectOut) => void
   onToggleExcluded: (project: ProjectOut) => void
+  onSyncProject?: (project: ProjectOut) => void
   emptyMessage?: string
 }) {
-  const columns = useMemo(() => createColumns(onToggleExcluded), [onToggleExcluded])
+  const columns = useMemo(
+    () => createColumns(onToggleExcluded, onSyncProject),
+    [onToggleExcluded, onSyncProject],
+  )
   return (
     <TooltipProvider>
       <DataTable

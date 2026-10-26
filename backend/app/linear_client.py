@@ -80,6 +80,7 @@ _PROJECT_NODE_FIELDS = """
         id
         name
         state
+        status { name type }
         startDate
         targetDate
         completedAt
@@ -95,9 +96,9 @@ _PROJECT_HISTORY_FIELDS = """
 """
 
 TEAM_PROJECTS_QUERY = f"""
-query TeamProjects($teamId: String!, $after: String) {{
+query TeamProjects($teamId: String!, $after: String, $filter: ProjectFilter) {{
   team(id: $teamId) {{
-    projects(first: 50, after: $after, includeArchived: false) {{
+    projects(first: 50, after: $after, includeArchived: false, filter: $filter) {{
       nodes {{
 {_PROJECT_NODE_FIELDS}
 {_PROJECT_HISTORY_FIELDS}
@@ -109,14 +110,23 @@ query TeamProjects($teamId: String!, $after: String) {{
 """
 
 TEAM_PROJECTS_WITHOUT_HISTORY_QUERY = f"""
-query TeamProjectsWithoutHistory($teamId: String!, $after: String) {{
+query TeamProjectsWithoutHistory($teamId: String!, $after: String, $filter: ProjectFilter) {{
   team(id: $teamId) {{
-    projects(first: 100, after: $after, includeArchived: false) {{
+    projects(first: 100, after: $after, includeArchived: false, filter: $filter) {{
       nodes {{
 {_PROJECT_NODE_FIELDS}
       }}
       pageInfo {{ hasNextPage endCursor }}
     }}
+  }}
+}}
+"""
+
+PROJECT_QUERY = f"""
+query Project($projectId: String!) {{
+  project(id: $projectId) {{
+{_PROJECT_NODE_FIELDS}
+{_PROJECT_HISTORY_FIELDS}
   }}
 }}
 """
@@ -148,13 +158,9 @@ _PROJECT_ISSUE_FIELDS = """
 """
 
 TEAM_PROJECT_ISSUES_QUERY = f"""
-query TeamProjectIssues($teamId: String!, $after: String) {{
+query TeamProjectIssues($teamId: String!, $after: String, $filter: IssueFilter) {{
   team(id: $teamId) {{
-    issues(
-      first: 100
-      after: $after
-      filter: {{ project: {{ null: false }} }}
-    ) {{
+    issues(first: 100, after: $after, filter: $filter) {{
       nodes {{
 {_PROJECT_ISSUE_FIELDS}
       }}
@@ -302,20 +308,31 @@ class LinearClient:
                 return members
             after = page.get("endCursor")
 
-    def team_projects(self, team_linear_id: str) -> list[dict[str, Any]]:
-        """Return the team's active projects, including due-date activity.
+    def team_project_summaries(self, team_linear_id: str) -> list[dict[str, Any]]:
+        """Return every non-archived project, without activity history."""
+        return self._team_project_pages(
+            team_linear_id, TEAM_PROJECTS_WITHOUT_HISTORY_QUERY, None
+        )
 
-        History is nested in the project query. When Linear rejects that query
-        as too complex, projects are loaded first and each history connection
-        is fetched on its own.
+    def team_projects(self, team_linear_id: str) -> list[dict[str, Any]]:
+        """Return Planned and In Progress projects, including due-date activity.
+
+        Other statuses are omitted so their activity logs are not downloaded
+        on every refresh. History is nested in the project query. When Linear
+        rejects that query as too complex, projects are loaded first and each
+        history connection is fetched on its own.
         """
         try:
-            return self._team_project_pages(team_linear_id, TEAM_PROJECTS_QUERY)
+            return self._team_project_pages(
+                team_linear_id, TEAM_PROJECTS_QUERY, _ISSUE_SYNC_PROJECT_FILTER
+            )
         except LinearError as exc:
             if not _is_complexity_error(exc):
                 raise
         projects = self._team_project_pages(
-            team_linear_id, TEAM_PROJECTS_WITHOUT_HISTORY_QUERY
+            team_linear_id,
+            TEAM_PROJECTS_WITHOUT_HISTORY_QUERY,
+            _ISSUE_SYNC_PROJECT_FILTER,
         )
         for project in projects:
             project_id = project.get("id")
@@ -323,6 +340,14 @@ class LinearClient:
                 continue
             project["history"] = self.project_history(project_id, None)
         return projects
+
+    def project(self, project_linear_id: str) -> dict[str, Any] | None:
+        """Return one project, including the first page of its activity log."""
+        data = self._post(PROJECT_QUERY, {"projectId": project_linear_id})
+        project = data.get("project")
+        if not isinstance(project, dict):
+            return None
+        return project
 
     def project_history(
         self, project_linear_id: str, after: str | None = None
@@ -335,11 +360,19 @@ class LinearClient:
         project = data.get("project") or {}
         return project.get("history") or {}
 
-    def _team_project_pages(self, team_linear_id: str, query: str) -> list[dict[str, Any]]:
+    def _team_project_pages(
+        self,
+        team_linear_id: str,
+        query: str,
+        project_filter: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         projects: list[dict[str, Any]] = []
         after: str | None = None
         while True:
-            data = self._post(query, {"teamId": team_linear_id, "after": after})
+            data = self._post(
+                query,
+                {"teamId": team_linear_id, "after": after, "filter": project_filter},
+            )
             team = data.get("team") or {}
             connection = team.get("projects") or {}
             projects.extend(connection.get("nodes") or [])
@@ -349,13 +382,16 @@ class LinearClient:
             after = page.get("endCursor")
 
     def team_project_issues(self, team_linear_id: str) -> list[dict[str, Any]]:
-        """Return this team's issues that belong to a Linear project.
+        """Return this team's issues on Planned and In Progress projects.
 
         Issues owned by another team on the same project are not included.
-        Load those with ``project_issues``.
+        Load those with ``project_issues``. Other project statuses are omitted
+        because a team refresh leaves their stored issues in place.
         """
         return self._issue_pages(
-            TEAM_PROJECT_ISSUES_QUERY, {"teamId": team_linear_id}, "team"
+            TEAM_PROJECT_ISSUES_QUERY,
+            {"teamId": team_linear_id, "filter": _ISSUE_SYNC_ISSUE_FILTER},
+            "team",
         )
 
     def project_issues(self, project_linear_id: str) -> list[dict[str, Any]]:
@@ -392,3 +428,13 @@ class LinearClient:
 def _is_complexity_error(exc: LinearError) -> bool:
     """True when Linear rejected a query for exceeding its complexity budget."""
     return "complex" in str(exc).lower()
+
+
+# Linear status names. "In Progress" is the default name for the started type.
+_ISSUE_SYNC_STATUS_NAMES = ["Planned", "In Progress"]
+_ISSUE_SYNC_PROJECT_FILTER: dict[str, Any] = {
+    "status": {"name": {"in": _ISSUE_SYNC_STATUS_NAMES}}
+}
+_ISSUE_SYNC_ISSUE_FILTER: dict[str, Any] = {
+    "project": {"null": False, "status": {"name": {"in": _ISSUE_SYNC_STATUS_NAMES}}}
+}

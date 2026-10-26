@@ -146,6 +146,15 @@ export function ProjectsPage() {
     },
     onError: (error: Error) => notifyError(error.message),
   })
+  const syncProjectMutation = useMutation({
+    mutationFn: ({ teamId, projectId }: { teamId: number; projectId: number }) =>
+      api.refreshProject(teamId, projectId),
+    onSuccess: (result, { teamId }) => {
+      notifySuccess(result.message ?? 'Project synced.')
+      invalidateTeamData(queryClient, teamId)
+    },
+    onError: (error: Error) => notifyError(error.message),
+  })
 
   useEffect(() => {
     setSelectedProjectId(null)
@@ -203,6 +212,7 @@ export function ProjectsPage() {
                   {lastSynced
                     ? `Projects synced ${formatRelative(lastSynced)}`
                     : 'Projects have not been synced yet'}
+                  {' · issues sync for Planned and In Progress'}
                 </p>
               )}
             </div>
@@ -286,6 +296,16 @@ export function ProjectsPage() {
                     onToggleExcluded={(project) =>
                       selectedTeamId !== null &&
                       excludeMutation.mutate({ teamId: selectedTeamId, project })
+                    }
+                    onSyncProject={
+                      canRefresh
+                        ? (project) =>
+                            selectedTeamId !== null &&
+                            syncProjectMutation.mutate({
+                              teamId: selectedTeamId,
+                              projectId: project.id,
+                            })
+                        : undefined
                     }
                     emptyMessage={
                       visibleProjects.length === 0

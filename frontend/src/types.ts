@@ -270,5 +270,6 @@ export interface ProjectRefreshResult {
   status: string
   projects_synced: number
   issues_synced: number
+  projects_skipped: number
   message: string | null
 }

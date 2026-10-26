@@ -166,6 +166,10 @@ export const api = {
     request<ProjectRefreshResult>(`/teams/${teamId}/projects/refresh`, {
       method: 'POST',
     }),
+  refreshProject: (teamId: number, projectId: number) =>
+    request<ProjectRefreshResult>(`/teams/${teamId}/projects/${projectId}/refresh`, {
+      method: 'POST',
+    }),
 
   getTeamCost: (teamId: number) => request<TeamCostOut>(`/teams/${teamId}/cost`),
   updateTeamCost: (teamId: number, payload: { currency: string; man_day_cost: number }) =>

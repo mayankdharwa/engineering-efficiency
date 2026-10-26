@@ -46,10 +46,12 @@ class SyncSummary:
 
 @dataclass
 class ProjectSyncSummary:
-    """Outcome of a single team project refresh."""
+    """Outcome of a project refresh."""
 
     projects_synced: int
     issues_synced: int
+    projects_skipped: int = 0
+    removed: bool = False
 
 
 class CycleMismatchError(RuntimeError):
@@ -407,19 +409,72 @@ def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSumma
     )
 
 
-def _apply_project_fields(row: Project, remote: dict[str, Any], *, synced_at: datetime) -> None:
+def _apply_project_fields(
+    row: Project, remote: dict[str, Any], *, synced_at: datetime | None
+) -> None:
     row.name = remote.get("name") or "Untitled project"
-    row.state = remote.get("state")
+    row.state = _stored_state(remote)
     row.start_date = remote.get("startDate")
     row.target_date = remote.get("targetDate")
     row.completed_at = parse_dt(remote.get("completedAt"))
     row.canceled_at = parse_dt(remote.get("canceledAt"))
     row.archived_at = parse_dt(remote.get("archivedAt"))
-    row.last_synced_at = synced_at
+    if synced_at is not None:
+        row.last_synced_at = synced_at
 
 
 def _is_archived(remote: dict[str, Any]) -> bool:
     return bool(remote.get("archivedAt"))
+
+
+# Status names Linear shows for the projects whose issues and activity we refresh.
+# The deprecated ``state`` field still uses ``started`` for In Progress.
+_ISSUE_SYNC_STATUS_NAMES = frozenset({"planned", "in progress"})
+_ISSUE_SYNC_STATE_TYPES = frozenset({"planned", "started"})
+
+
+def _status_name(remote: dict[str, Any]) -> str | None:
+    status = remote.get("status")
+    if not isinstance(status, dict):
+        return None
+    name = status.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    return name.strip()
+
+
+def _stored_state(remote: dict[str, Any]) -> str | None:
+    """State string to keep locally.
+
+    Prefer Linear's status type (``started`` for In Progress) so the rest of
+    the app keeps its existing state keys. Fall back to the status name, then
+    the deprecated ``state`` field.
+    """
+    status = remote.get("status")
+    if isinstance(status, dict):
+        status_type = status.get("type")
+        if isinstance(status_type, str) and status_type.strip():
+            return status_type.strip()
+    state = remote.get("state")
+    if isinstance(state, str) and state.strip():
+        return state.strip()
+    return _status_name(remote)
+
+
+def _syncs_project_work(remote: dict[str, Any]) -> bool:
+    """Whether this refresh should download the project's issues and activity.
+
+    Linear's status names are Planned and In Progress. Payloads that only
+    include the deprecated state field use ``planned`` and ``started``.
+    """
+    name = _status_name(remote)
+    if name is not None:
+        return name.casefold() in _ISSUE_SYNC_STATUS_NAMES
+    state = remote.get("state")
+    if not isinstance(state, str):
+        return False
+    key = state.strip().casefold()
+    return key in _ISSUE_SYNC_STATUS_NAMES or key in _ISSUE_SYNC_STATE_TYPES
 
 
 def _ensure_project(
@@ -518,16 +573,23 @@ def _replace_due_date_history(
 
 
 def _remote_project_issues(
-    client: LinearClient, team: Team, remote_projects: list[dict[str, Any]]
+    client: LinearClient,
+    team: Team,
+    remote_projects: list[dict[str, Any]],
+    skip_ids: set[str],
 ) -> list[dict[str, Any]]:
     """Issues on this team's projects, including ones owned by other teams.
 
     ``team.issues`` only returns issues whose team is this one. Assigning an
     issue to someone on another team moves it to that team, so it disappears
     from this query while staying on the project. Those issues are loaded
-    from each project and merged in.
+    from each project and merged in. Projects in ``skip_ids`` are omitted.
     """
-    issues = list(client.team_project_issues(team.linear_id))
+    issues = [
+        issue
+        for issue in client.team_project_issues(team.linear_id)
+        if (issue.get("project") or {}).get("id") not in skip_ids
+    ]
     seen = {issue.get("id") for issue in issues if issue.get("id")}
     fetch = getattr(client, "project_issues", None)
     if fetch is None:
@@ -536,7 +598,7 @@ def _remote_project_issues(
         if _is_archived(project):
             continue
         project_id = project.get("id")
-        if not project_id:
+        if not project_id or project_id in skip_ids:
             continue
         for issue in fetch(project_id) or []:
             issue_id = issue.get("id")
@@ -547,24 +609,74 @@ def _remote_project_issues(
     return issues
 
 
+def _attach_history(client: LinearClient, remote: dict[str, Any]) -> None:
+    """Load the first activity page when the project payload does not have one."""
+    if "history" in remote or not remote.get("id"):
+        return
+    fetch = getattr(client, "project_history", None)
+    if fetch is None:
+        return
+    remote["history"] = fetch(remote["id"], None) or {}
+
+
+def _drop_replaced_issues(db: Session, project_ids: set[int]) -> None:
+    """Delete stored issues for projects whose snapshot is being replaced.
+
+    The objects are removed from the session first. A bulk delete leaves them
+    there, and SQLite can reuse their primary keys for the new rows.
+    """
+    if not project_ids:
+        return
+    for obj in list(db):
+        if isinstance(obj, ProjectIssue) and obj.project_id in project_ids:
+            db.expunge(obj)
+    db.execute(delete(ProjectIssue).where(ProjectIssue.project_id.in_(project_ids)))
+
+
 def sync_team_projects(db: Session, client: LinearClient, team: Team) -> ProjectSyncSummary:
     """Download the team's Linear projects and their issues.
 
     Cycle ``issues`` rows are left alone. Project issues replace the previous
-    project snapshot for this team so cost always reflects Linear's current
-    project membership, including work that spans cycles and issues owned by
-    other teams on the same project.
-    """
-    remote_projects = client.team_projects(team.linear_id)
-    remote_issues = _remote_project_issues(client, team, remote_projects)
-    issues = [remote for remote in remote_issues if not remote.get("parent")]
+    snapshot for projects that are synced, so cost reflects Linear's current
+    membership, including work that spans cycles and issues owned by other
+    teams on the same project.
 
-    now = utcnow()
+    Issues and due-date activity are downloaded only for Linear statuses
+    Planned and In Progress. Every other non-archived project stays in the
+    list and keeps the issues and activity it already has. Sync one project
+    to refresh a status outside that pair.
+    """
     existing = {
         row.linear_id: row
         for row in db.scalars(select(Project).where(Project.team_id == team.id)).all()
     }
-    seen_ids: set[str] = set()
+    open_projects = {
+        remote["id"]: remote
+        for remote in client.team_projects(team.linear_id)
+        if remote.get("id")
+    }
+    remote_projects = list(client.team_project_summaries(team.linear_id))
+    for remote in remote_projects:
+        detailed = open_projects.get(remote.get("id"))
+        if detailed and "history" in detailed:
+            remote["history"] = detailed["history"]
+
+    skip_ids: set[str] = set()
+    full_ids: set[str] = set()
+    for remote in remote_projects:
+        if _is_archived(remote) or not remote.get("id"):
+            continue
+        linear_id = remote["id"]
+        if _syncs_project_work(remote):
+            full_ids.add(linear_id)
+        else:
+            skip_ids.add(linear_id)
+
+    remote_issues = _remote_project_issues(client, team, remote_projects, skip_ids)
+    issues = [remote for remote in remote_issues if not remote.get("parent")]
+
+    now = utcnow()
+    seen_ids: set[str] = set(skip_ids)
 
     for remote in remote_projects:
         if _is_archived(remote):
@@ -572,6 +684,9 @@ def sync_team_projects(db: Session, client: LinearClient, team: Team) -> Project
         linear_id = remote["id"]
         seen_ids.add(linear_id)
         row = _ensure_project(db, team, existing, linear_id)
+        if linear_id in skip_ids:
+            _apply_project_fields(row, remote, synced_at=None)
+            continue
         _apply_project_fields(row, remote, synced_at=now)
 
     for remote in issues:
@@ -586,12 +701,24 @@ def sync_team_projects(db: Session, client: LinearClient, team: Team) -> Project
 
     db.flush()
 
-    db.execute(delete(ProjectIssue).where(ProjectIssue.team_id == team.id))
+    replace_ids = {
+        existing[linear_id].id
+        for linear_id in seen_ids
+        if linear_id not in skip_ids and linear_id in existing
+    }
+    _drop_replaced_issues(db, replace_ids)
+    for project in existing.values():
+        db.expire(project, ["issues"])
+
     stored = 0
     for remote in issues:
         project_payload = remote.get("project") or {}
         project_linear_id = project_payload.get("id")
-        if not project_linear_id or _is_archived(project_payload):
+        if (
+            not project_linear_id
+            or project_linear_id in skip_ids
+            or _is_archived(project_payload)
+        ):
             continue
         project_row = existing.get(project_linear_id)
         if project_row is None:
@@ -600,10 +727,13 @@ def sync_team_projects(db: Session, client: LinearClient, team: Team) -> Project
         stored += 1
 
     for remote in remote_projects:
-        if _is_archived(remote) or "history" not in remote:
+        if remote.get("id") not in full_ids:
             continue
         project_row = existing.get(remote.get("id"))
         if project_row is None:
+            continue
+        _attach_history(client, remote)
+        if "history" not in remote:
             continue
         _replace_due_date_history(db, client, team, project_row, remote)
 
@@ -612,7 +742,43 @@ def sync_team_projects(db: Session, client: LinearClient, team: Team) -> Project
             db.delete(row)
 
     db.commit()
-    return ProjectSyncSummary(projects_synced=len(seen_ids), issues_synced=stored)
+    return ProjectSyncSummary(
+        projects_synced=len(seen_ids - skip_ids),
+        issues_synced=stored,
+        projects_skipped=len(skip_ids),
+    )
+
+
+def sync_project(
+    db: Session, client: LinearClient, team: Team, project: Project
+) -> ProjectSyncSummary:
+    """Download one project even when a team refresh would leave it alone."""
+    fetch_project = getattr(client, "project", None)
+    remote = fetch_project(project.linear_id) if fetch_project is not None else None
+    if not isinstance(remote, dict) or _is_archived(remote):
+        db.delete(project)
+        db.commit()
+        return ProjectSyncSummary(projects_synced=0, issues_synced=0, removed=True)
+
+    _apply_project_fields(project, remote, synced_at=utcnow())
+    fetch_issues = getattr(client, "project_issues", None)
+    issues = []
+    if fetch_issues is not None:
+        issues = [
+            issue
+            for issue in (fetch_issues(project.linear_id) or [])
+            if not issue.get("parent")
+        ]
+    db.flush()
+    _drop_replaced_issues(db, {project.id})
+    db.expire(project, ["issues"])
+    for issue in issues:
+        db.add(_build_project_issue(team, project, issue))
+    _attach_history(client, remote)
+    if "history" in remote:
+        _replace_due_date_history(db, client, team, project, remote)
+    db.commit()
+    return ProjectSyncSummary(projects_synced=1, issues_synced=len(issues))
 
 
 def record_sync_run(

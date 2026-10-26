@@ -12,7 +12,7 @@ from ..database import get_db
 from ..models import Project, SyncKind, SyncStatus
 from ..projects import compute_team_project_costs
 from ..schemas import ProjectOut, ProjectRefreshResult, ProjectUpdateIn
-from ..sync import client_from_config, record_sync_run, sync_team_projects
+from ..sync import client_from_config, record_sync_run, sync_project, sync_team_projects
 from .deps import get_team_or_404
 from .teams import _tracked_sync_run
 
@@ -68,6 +68,11 @@ def refresh_projects(team_id: int, db: Session = Depends(get_db)) -> ProjectRefr
             f"Synced {summary.projects_synced} project(s) and "
             f"{summary.issues_synced} issue(s)."
         )
+        if summary.projects_skipped:
+            message += (
+                f" Left {summary.projects_skipped} project(s) outside "
+                "Planned and In Progress unchanged."
+            )
         record_sync_run(
             db,
             kind=SyncKind.PROJECTS,
@@ -82,5 +87,46 @@ def refresh_projects(team_id: int, db: Session = Depends(get_db)) -> ProjectRefr
         status="success",
         projects_synced=summary.projects_synced,
         issues_synced=summary.issues_synced,
+        projects_skipped=summary.projects_skipped,
+        message=message,
+    )
+
+
+@router.post(
+    "/{team_id}/projects/{project_id}/refresh",
+    response_model=ProjectRefreshResult,
+    dependencies=[Depends(require_refresher)],
+)
+def refresh_project(
+    team_id: int, project_id: int, db: Session = Depends(get_db)
+) -> ProjectRefreshResult:
+    """Download one project, including one that team refresh leaves completed."""
+    team = get_team_or_404(db, team_id)
+    project = db.get(Project, project_id)
+    if project is None or project.team_id != team.id:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found.")
+    name = project.name
+    with _tracked_sync_run(db, SyncKind.PROJECTS, team_id=team.id) as run:
+        with client_from_config(db) as client:
+            summary = sync_project(db, client, team, project)
+        if summary.removed:
+            message = f"Removed {name}; it is archived in Linear."
+        else:
+            message = f"Synced {name} ({summary.issues_synced} issue(s))."
+        record_sync_run(
+            db,
+            kind=SyncKind.PROJECTS,
+            status=SyncStatus.SUCCESS,
+            team_id=team.id,
+            message=message,
+            issues_synced=summary.issues_synced,
+            run=run,
+        )
+    return ProjectRefreshResult(
+        team_id=team.id,
+        status="success",
+        projects_synced=summary.projects_synced,
+        issues_synced=summary.issues_synced,
+        projects_skipped=summary.projects_skipped,
         message=message,
     )
