@@ -4,6 +4,7 @@ import {
   createRouter,
   Outlet,
   redirect,
+  retainSearchParams,
 } from '@tanstack/react-router'
 import { Toaster } from '@/components/ui/toast'
 import { Layout } from './components/Layout'
@@ -15,6 +16,8 @@ import { LinearSetupPanel } from './components/LinearSetupPanel'
 import { TeamConfigurationPanel } from './components/TeamConfigurationPanel'
 import { TimeConfigurationPanel } from './components/TimeConfigurationPanel'
 import { api } from './api'
+import { SelectedTeamProvider } from './hooks/useSelectedTeam'
+import { parseTeamSearch } from './lib/teamSearch'
 import { ConfigLayout } from './pages/ConfigLayout'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
@@ -35,7 +38,7 @@ const loginRoute = createRoute({
   beforeLoad: async () => {
     const status = await api.getAuthStatus()
     if (status.authenticated) {
-      throw redirect({ to: '/' })
+      throw redirect({ to: '/cycles', replace: true })
     }
   },
   component: LoginPage,
@@ -44,6 +47,10 @@ const loginRoute = createRoute({
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: '_app',
+  validateSearch: parseTeamSearch,
+  search: {
+    middlewares: [retainSearchParams(['team'])],
+  },
   beforeLoad: async () => {
     const status = await api.getAuthStatus()
     if (!status.authenticated) {
@@ -52,7 +59,9 @@ const appRoute = createRoute({
   },
   component: () => (
     <Layout>
-      <Outlet />
+      <SelectedTeamProvider>
+        <Outlet />
+      </SelectedTeamProvider>
     </Layout>
   ),
 })
@@ -60,6 +69,14 @@ const appRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/cycles', search, replace: true })
+  },
+})
+
+const cyclesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/cycles',
   component: DashboardPage,
 })
 
@@ -72,10 +89,10 @@ const projectsRoute = createRoute({
 const configRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/config',
-  beforeLoad: async () => {
+  beforeLoad: async ({ search }) => {
     const status = await api.getAuthStatus()
     if (status.role !== 'admin') {
-      throw redirect({ to: '/' })
+      throw redirect({ to: '/cycles', search, replace: true })
     }
   },
   component: ConfigLayout,
@@ -84,8 +101,8 @@ const configRoute = createRoute({
 const configIndexRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/',
-  beforeLoad: () => {
-    throw redirect({ to: '/config/linear' })
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/config/linear', search, replace: true })
   },
 })
 
@@ -135,6 +152,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   appRoute.addChildren([
     indexRoute,
+    cyclesRoute,
     projectsRoute,
     configRoute.addChildren([
       configIndexRoute,

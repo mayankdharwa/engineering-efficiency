@@ -3,11 +3,9 @@ import { api } from '../api'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import { useSelectedCycleId } from '../lib/selection'
 
-/** Teams, cycles, issues, stats, default cycle selection, and refresh. */
+/** Cycles, issues, stats, default cycle selection, and refresh for one team. */
 export function useDashboardQueries(selectedTeamId: number | null) {
   const queryClient = useQueryClient()
-
-  const teamsQuery = useQuery({ queryKey: queryKeys.teams, queryFn: api.listTeams })
 
   const cyclesQuery = useQuery({
     queryKey: queryKeys.cycles(selectedTeamId),
@@ -37,7 +35,6 @@ export function useDashboardQueries(selectedTeamId: number | null) {
   })
 
   return {
-    teamsQuery,
     cyclesQuery,
     issuesQuery,
     statsQuery,

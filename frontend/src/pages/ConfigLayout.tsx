@@ -1,5 +1,4 @@
 import { Link, Outlet } from '@tanstack/react-router'
-import { ConfigTeamProvider } from '../hooks/useConfigTeam'
 
 const navBase = 'block shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors'
 const navIdle = `${navBase} text-muted-foreground hover:bg-muted hover:text-foreground`
@@ -38,9 +37,7 @@ export function ConfigLayout() {
           ))}
         </nav>
         <div className="min-w-0 flex-1">
-          <ConfigTeamProvider>
-            <Outlet />
-          </ConfigTeamProvider>
+          <Outlet />
         </div>
       </div>
     </div>

@@ -25,6 +25,7 @@ import { ProjectStateFilter } from '../components/ProjectStateFilter'
 import { ProjectsTable } from '../components/ProjectsTable'
 import { TeamPicker } from '../components/TeamPicker'
 import { useCanRefresh } from '../hooks/useAuth'
+import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { formatMoney, formatPoints, formatRelative } from '../lib/format'
 import { notifyError, notifySuccess } from '../lib/notify'
 import { durationExceedsManDays } from '../lib/projectSchedule'
@@ -33,7 +34,6 @@ import {
   filterProjectsByState,
 } from '../lib/projectState'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
-import { pickDefaultTeamId } from '../lib/selection'
 import type { ProjectOut } from '../types'
 
 function StatCard({
@@ -61,7 +61,13 @@ function StatCard({
 export function ProjectsPage() {
   const queryClient = useQueryClient()
   const canRefresh = useCanRefresh()
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+  const {
+    teamsQuery,
+    teams,
+    teamId: selectedTeamId,
+    setTeamId: setSelectedTeamId,
+    selectedTeam,
+  } = useSelectedTeam()
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [selectedStates, setSelectedStates] = useState<Set<string>>(
     () => new Set(DEFAULT_PROJECT_STATES),
@@ -77,10 +83,6 @@ export function ProjectsPage() {
     () => new Set(DEFAULT_PROJECT_STATES),
   )
   const [showDone, setShowDone] = useState(true)
-
-  const teamsQuery = useQuery({ queryKey: queryKeys.teams, queryFn: api.listTeams })
-  const teams = teamsQuery.data ?? []
-  const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null
 
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects(selectedTeamId),
@@ -144,11 +146,6 @@ export function ProjectsPage() {
     },
     onError: (error: Error) => notifyError(error.message),
   })
-
-  useEffect(() => {
-    const next = pickDefaultTeamId(teams, selectedTeamId)
-    if (next !== selectedTeamId) setSelectedTeamId(next)
-  }, [selectedTeamId, teams])
 
   useEffect(() => {
     setSelectedProjectId(null)

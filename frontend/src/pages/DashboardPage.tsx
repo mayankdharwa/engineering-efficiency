@@ -22,9 +22,9 @@ import { VelocityTrendChart } from '../components/VelocityTrendChart'
 import { useTimezone } from '../hooks/useAppSettings'
 import { useCanRefresh } from '../hooks/useAuth'
 import { useDashboardQueries } from '../hooks/useDashboardQueries'
+import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { buildDashboardView } from '../lib/dashboardMetrics'
 import { formatMoney, formatPercent, formatPoints } from '../lib/format'
-import { pickDefaultTeamId } from '../lib/selection'
 
 function StatCard({
   label,
@@ -51,13 +51,18 @@ function StatCard({
 export function DashboardPage() {
   const timezone = useTimezone()
   const canRefresh = useCanRefresh()
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+  const {
+    teamsQuery,
+    teams,
+    teamId: selectedTeamId,
+    setTeamId: setSelectedTeamId,
+    selectedTeam,
+  } = useSelectedTeam()
   // Empty set means all groups (see isAllGroups / groupKey).
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
   const [showDone, setShowDone] = useState(false)
 
   const {
-    teamsQuery,
     cyclesQuery,
     issuesQuery,
     statsQuery,
@@ -66,19 +71,12 @@ export function DashboardPage() {
     setSelectedCycleId,
   } = useDashboardQueries(selectedTeamId)
 
-  const teams = teamsQuery.data ?? []
   const cycles = cyclesQuery.data ?? []
-  const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null
   const stats = statsQuery.data
   const view = useMemo(
     () => buildDashboardView(stats, selectedGroups),
     [stats, selectedGroups],
   )
-
-  useEffect(() => {
-    const next = pickDefaultTeamId(teams, selectedTeamId)
-    if (next !== selectedTeamId) setSelectedTeamId(next)
-  }, [selectedTeamId, teams])
 
   // Group ids are team-specific, so clear the filter when the team changes.
   useEffect(() => {

@@ -31,7 +31,7 @@ export function LoginPage() {
       setupRequired ? api.setupAccount(name, secret) : api.login(name, secret),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth })
-      await navigate({ to: '/' })
+      await navigate({ to: '/cycles', replace: true })
     },
   })
 

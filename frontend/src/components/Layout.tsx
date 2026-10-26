@@ -27,14 +27,14 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
         <div className="flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2 text-sm font-semibold">
+          <Link to="/cycles" className="flex items-center gap-2 text-sm font-semibold">
             <span className="size-5 rounded-md bg-gradient-to-br from-primary to-amber-600" />
             Engineering Efficiency
           </Link>
           <div className="flex items-center gap-3">
             <nav className="flex items-center gap-1">
               <Link
-                to="/"
+                to="/cycles"
                 className={navIdle}
                 activeProps={{ className: navActive }}
                 activeOptions={{ exact: true }}
