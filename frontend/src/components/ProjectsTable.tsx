@@ -35,7 +35,6 @@ import {
   EXCLUDED_PROJECT_STATE,
   formatProjectState,
   projectStateKey,
-  projectSyncsIssues,
 } from '../lib/projectState'
 import { appTableFeatures } from '../lib/table'
 import type { ProjectOut } from '../types'
@@ -364,12 +363,10 @@ function ProjectHealthCell({
 
 function ProjectRowMenu({
   excluded,
-  manualSync,
   onToggleExcluded,
   onSyncProject,
 }: {
   excluded: boolean
-  manualSync: boolean
   onToggleExcluded: () => void
   onSyncProject?: () => void
 }) {
@@ -390,7 +387,7 @@ function ProjectRowMenu({
           <DropdownMenuItem onClick={onToggleExcluded}>
             {excluded ? 'Include' : 'Exclude'}
           </DropdownMenuItem>
-          {manualSync && onSyncProject ? (
+          {onSyncProject ? (
             <DropdownMenuItem onClick={onSyncProject}>Sync project</DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
@@ -413,7 +410,6 @@ function createColumns(
           <div className="flex min-w-0 items-center gap-1">
             <ProjectRowMenu
               excluded={project.excluded}
-              manualSync={!projectSyncsIssues(project.state)}
               onToggleExcluded={() => onToggleExcluded(project)}
               onSyncProject={
                 onSyncProject ? () => onSyncProject(project) : undefined
