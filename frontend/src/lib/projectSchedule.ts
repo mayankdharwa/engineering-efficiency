@@ -53,43 +53,6 @@ export function addWorkingDays(startDate: string, workingDays: number): string |
   return isoFromUtc(cursor)
 }
 
-/** Calculated due date: start date plus the working days implied by `points`. */
-export function calculatedProjectDueDate(
-  startDate: string | null | undefined,
-  points: number,
-): string | null {
-  if (!startDate) return null
-  return addWorkingDays(startDate, workingDaysForPoints(points))
-}
-
-/**
- * Signed working-day distance from `fromDate` to `toDate`.
- *
- * Positive when `toDate` is later. The same calendar day is 0. Weekends are
- * not counted, matching the gap between two due dates in working days.
- */
-export function signedWorkingDaysBetween(
-  fromDate: string,
-  toDate: string,
-): number | null {
-  const from = parseIsoDate(fromDate)
-  const to = parseIsoDate(toDate)
-  if (!from || !to) return null
-  const fromMs = utcMidnight(from.year, from.month, from.day)
-  const toMs = utcMidnight(to.year, to.month, to.day)
-  if (fromMs === toMs) return 0
-  const step = toMs > fromMs ? 1 : -1
-  let days = 0
-  for (
-    let cursor = fromMs + step * MS_PER_DAY;
-    step > 0 ? cursor <= toMs : cursor >= toMs;
-    cursor += step * MS_PER_DAY
-  ) {
-    if (isWeekday(cursor)) days += step
-  }
-  return days
-}
-
 /**
  * Weekdays from `startDate` through `dueDate`, counting a weekday endpoint.
  *
@@ -115,18 +78,6 @@ export function workingDaysThrough(startDate: string, dueDate: string): number |
 }
 
 /**
- * Working days the calculated due date is off from the Linear due date.
- * Positive means the estimate lands later than the Linear date.
- */
-export function dueDateOffsetWorkingDays(
-  calculatedDueDate: string | null,
-  actualDueDate: string | null | undefined,
-): number | null {
-  if (!calculatedDueDate || !actualDueDate) return null
-  return signedWorkingDaysBetween(actualDueDate, calculatedDueDate)
-}
-
-/**
  * Weekday span from start through due is longer than the man-days in `points`.
  *
  * This is the same comparison as the duration chart: calendar days versus
@@ -141,11 +92,4 @@ export function durationExceedsManDays(
   const calendarDays = workingDaysThrough(startDate, dueDate)
   if (calendarDays === null) return false
   return calendarDays > workingDaysForPoints(points)
-}
-
-/** `+2 days`, `-5 days`, or `0 days`. */
-export function formatWorkingDayOffset(days: number): string {
-  const unit = Math.abs(days) === 1 ? 'day' : 'days'
-  if (days > 0) return `+${days} ${unit}`
-  return `${days} ${unit}`
 }
