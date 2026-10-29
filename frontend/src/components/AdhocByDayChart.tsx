@@ -14,8 +14,6 @@ import {
 import { formatCalendarDate, formatPercent, formatPoints } from '../lib/format'
 import type { AdhocByDayPointOut } from '../types'
 
-const percentFormat = (value: number) => formatPercent(value)
-
 /** Distinct fills so many assignees stay separable; cycles if the roster is larger. */
 const ASSIGNEE_COLORS = [
   'var(--chart-1)',
@@ -116,7 +114,7 @@ export function AdhocByDayChart({ dates, points }: AdhocByDayChartProps) {
           y: {
             scale: scaleLinear().domain([0, 1]),
             grid: true,
-            axis: { label: 'Share of adhoc points', ticks: { format: percentFormat } },
+            axis: { label: 'Share of adhoc points', ticks: { format: formatPercent } },
           },
         },
         color: {

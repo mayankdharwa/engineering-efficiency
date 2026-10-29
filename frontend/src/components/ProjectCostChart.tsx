@@ -4,6 +4,7 @@ import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
 import { tooltip } from '@tanstack/charts/tooltip'
 import { useMemo } from 'react'
+import { chartHeight, TOOLTIP_MAX_WIDTH_STYLE, truncateLabel } from '../lib/chart'
 import { formatMoney, formatPoints } from '../lib/format'
 import type { ProjectOut } from '../types'
 
@@ -19,14 +20,6 @@ interface ProjectBarRow {
   cost: number
   points: number
   currency: string
-}
-
-function chartHeight(count: number): number {
-  return Math.max(160, count * 38 + 56)
-}
-
-function truncateName(name: string, max = NAME_MAX): string {
-  return name.length > max ? `${name.slice(0, max)}...` : name
 }
 
 function ProjectTooltipBody({ points }: { points: readonly { datum: ProjectBarRow }[] }) {
@@ -59,7 +52,7 @@ export function ProjectCostChart({ projects }: { projects: ProjectOut[] }) {
     return sorted.map((project) => ({
       key: String(project.id),
       project: project.name,
-      label: `${truncateName(project.name)} • ${formatMoney(project.cost, project.currency)}`,
+      label: `${truncateLabel(project.name, NAME_MAX)} • ${formatMoney(project.cost, project.currency)}`,
       cost: project.cost,
       points: project.points,
       currency: project.currency,
@@ -149,9 +142,9 @@ export function ProjectCostChart({ projects }: { projects: ProjectOut[] }) {
   return (
     <Chart
       definition={definition}
-      height={chartHeight(rows.length)}
+      height={chartHeight(rows.length, { perRow: 38, padding: 56 })}
       ariaLabel={useCost ? 'Project cost' : 'Project points'}
-      style={{ ['--ts-chart-tooltip-max-width' as string]: '20rem' }}
+      style={TOOLTIP_MAX_WIDTH_STYLE}
       renderTooltipBody={({ points }) => <ProjectTooltipBody points={points} />}
     />
   )

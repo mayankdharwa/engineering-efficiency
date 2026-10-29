@@ -3,6 +3,7 @@ import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
 import { tooltip } from '@tanstack/charts/tooltip'
 import { Fragment, useMemo } from 'react'
+import { chartHeight, TOOLTIP_MAX_WIDTH_STYLE, truncateLabel } from '../lib/chart'
 import { parseHexColor } from '../lib/color'
 import { formatCalendarDate, formatPoints } from '../lib/format'
 import {
@@ -77,10 +78,6 @@ const SPAN_HALF = 0.3
 /** Half the height of the points bar drawn over it. */
 const POINTS_HALF = 0.15
 
-function chartHeight(count: number): number {
-  return Math.max(160, count * 40 + 108)
-}
-
 /** Pixel width of a y-axis label, padded so the text stays inside the chart. */
 function leftMarginFor(labels: readonly string[]): number {
   const widest = labels.reduce((max, label) => Math.max(max, estimatedLabelWidth(label)), 0)
@@ -98,10 +95,6 @@ function estimatedLabelWidth(text: string): number {
     else em += 0.68
   }
   return em * fontSize
-}
-
-function axisLabel(name: string): string {
-  return name.length > NAME_MAX ? `${name.slice(0, NAME_MAX)}…` : name
 }
 
 function formatDayCount(days: number): string {
@@ -145,7 +138,7 @@ function comparisonFor(
   return {
     key: String(project.id),
     project: project.name,
-    label: axisLabel(project.name),
+    label: truncateLabel(project.name, NAME_MAX),
     startDate: project.start_date,
     dueDate: project.target_date,
     calendarDays,
@@ -539,9 +532,9 @@ export function ProjectSpanChart({
   return (
     <Chart
       definition={definition}
-      height={chartHeight(comparisons.length)}
+      height={chartHeight(comparisons.length, { perRow: 40, padding: 108 })}
       ariaLabel="Project duration versus man days, split by group"
-      style={{ ['--ts-chart-tooltip-max-width' as string]: '20rem' }}
+      style={TOOLTIP_MAX_WIDTH_STYLE}
       renderTooltipBody={({ points }) => <SpanTooltipBody points={points} />}
     />
   )

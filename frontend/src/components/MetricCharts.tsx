@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { chartHeight } from '../lib/chart'
 import { formatPercent, formatPoints } from '../lib/format'
 import type { MemberMetricsOut } from '../types'
 
@@ -24,12 +25,6 @@ const COLOR_CAPACITY = 'var(--muted-foreground)'
 const MAX_VELOCITY = 1.2
 /** Where a truncated bar stops, leaving the 120% guide line visible. */
 const TRUNCATED_VELOCITY = 1.17
-
-function chartHeight(count: number): number {
-  return Math.max(160, count * 34 + 56)
-}
-
-const percentFormat = (value: number) => formatPercent(value)
 
 interface MetricChartsProps {
   members: MemberMetricsOut[]
@@ -126,7 +121,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
           scale: scaleLinear().domain([0, xMax]).clamp(true),
           nice: true,
           grid: true,
-          axis: { label: 'Velocity (done / expected)', ticks: { format: percentFormat } },
+          axis: { label: 'Velocity (done / expected)', ticks: { format: formatPercent } },
         },
         y: { scale: () => scaleBand<string>().padding(0.2) },
       },
@@ -187,7 +182,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
         <CardContent>
           <Chart
             definition={takenVsCapacity}
-            height={chartHeight(counted.length)}
+            height={chartHeight(counted.length, { perRow: 34, padding: 56 })}
             ariaLabel="Points taken versus capacity by member"
           />
         </CardContent>
@@ -203,7 +198,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
           ) : (
             <Chart
               definition={velocity}
-              height={chartHeight(workingMembers.length)}
+              height={chartHeight(workingMembers.length, { perRow: 34, padding: 56 })}
               ariaLabel="Velocity by person"
             />
           )}
@@ -221,7 +216,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
           ) : (
             <Chart
               definition={plannedVsAdhoc}
-              height={chartHeight(workingMembers.length)}
+              height={chartHeight(workingMembers.length, { perRow: 34, padding: 56 })}
               ariaLabel="Planned versus adhoc points by member"
             />
           )}

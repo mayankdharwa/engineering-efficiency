@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTimezone } from '../hooks/useAppSettings'
+import { chartHeight, truncateLabel } from '../lib/chart'
 import { formatCalendarDate, formatDateTime } from '../lib/format'
 import { projectStateKey } from '../lib/projectState'
 import { isoDateInTimeZone } from '../lib/timezone'
@@ -101,10 +102,6 @@ function spanLabel(start: number, end: number): string {
   return count === 1 ? '1 day' : `${count} days`
 }
 
-function axisLabel(name: string): string {
-  return name.length > NAME_MAX ? `${name.slice(0, NAME_MAX)}…` : name
-}
-
 /** Latest due date the chart marks with D, falling back to the stored target date. */
 function currentDueMs(project: ProjectOut): number | null {
   const dates = dueDates(project.due_date_history)
@@ -133,10 +130,6 @@ function compareProjects(
   if (leftMs === rightMs) return nameOrder
   const delta = leftMs - rightMs
   return direction === 'asc' ? delta : -delta
-}
-
-function chartHeight(count: number): number {
-  return Math.max(160, count * 36 + 56)
 }
 
 function sortDirectionLabel(key: TrajectorySortKey, direction: TrajectorySortDirection): string {
@@ -178,7 +171,7 @@ function trajectoryFor(
   const shared = {
     key: String(project.id),
     name: project.name,
-    label: axisLabel(project.name),
+    label: truncateLabel(project.name, NAME_MAX),
     chain,
   }
   const count = dueStops.length
@@ -553,7 +546,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
       ) : (
         <Chart
           definition={definition}
-          height={chartHeight(orderCount(stops))}
+          height={chartHeight(orderCount(stops), { perRow: 36, padding: 56 })}
           ariaLabel="Due date trajectory"
           renderTooltipBody={({ points }) => (
             <TrajectoryTooltip points={points} timeZone={timeZone} />

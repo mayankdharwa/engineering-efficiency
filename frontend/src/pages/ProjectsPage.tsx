@@ -1,8 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import { RefreshCwIcon } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { useEffect, useMemo, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardAction,
@@ -17,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '../api'
 import { IssuesTable } from '../components/IssuesTable'
+import { NoTeamsCard } from '../components/NoTeamsCard'
 import { PersonLoadChart } from '../components/PersonLoadChart'
 import { ProjectCostChart } from '../components/ProjectCostChart'
 import { ProjectDueDateTrajectory } from '../components/ProjectDueDateTrajectory'
@@ -24,6 +24,7 @@ import { ProjectRangeSelect } from '../components/ProjectRangeSelect'
 import { ProjectSpanChart } from '../components/ProjectSpanChart'
 import { ProjectStateFilter } from '../components/ProjectStateFilter'
 import { ProjectsTable } from '../components/ProjectsTable'
+import { StatCard } from '../components/StatCard'
 import { TeamPicker } from '../components/TeamPicker'
 import { useCanRefresh } from '../hooks/useAuth'
 import { useSelectedTeam } from '../hooks/useSelectedTeam'
@@ -37,28 +38,6 @@ import {
 } from '../lib/projectState'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import type { ProjectOut } from '../types'
-
-function StatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string
-  value: ReactNode
-  hint?: ReactNode
-}) {
-  return (
-    <Card className="gap-0 py-4">
-      <CardContent className="gap-1">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-2xl font-semibold tabular-nums">{value}</span>
-        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-      </CardContent>
-    </Card>
-  )
-}
 
 export function ProjectsPage() {
   const queryClient = useQueryClient()
@@ -190,17 +169,7 @@ export function ProjectsPage() {
       {teamsQuery.isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : teams.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No teams available</CardTitle>
-            <CardDescription>Import teams in Settings first.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link to="/config" className={buttonVariants()}>
-              Go to Settings
-            </Link>
-          </CardContent>
-        </Card>
+        <NoTeamsCard />
       ) : (
         <>
           <div className="flex flex-wrap items-start gap-4">

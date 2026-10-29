@@ -16,8 +16,6 @@ import type { VelocityTrendPointOut } from '../types'
 const COLOR_LINE = 'var(--primary)'
 const COLOR_TARGET = 'var(--muted-foreground)'
 
-const percentFormat = (value: number) => formatPercent(value)
-
 /** Render an ISO date as a short axis label, e.g. "Sep 30".
  *
  * The dates come from the backend already resolved to the configured working
@@ -58,7 +56,7 @@ export function VelocityTrendChart({ points }: VelocityTrendChartProps) {
             scale: scaleLinear,
             nice: true,
             grid: true,
-            axis: { label: 'Velocity', ticks: { format: percentFormat } },
+            axis: { label: 'Velocity', ticks: { format: formatPercent } },
           },
         },
         tooltip,

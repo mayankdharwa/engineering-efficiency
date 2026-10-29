@@ -1,6 +1,4 @@
-import { Link } from '@tanstack/react-router'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { buttonVariants } from '@/components/ui/button'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Card,
   CardAction,
@@ -18,6 +16,8 @@ import { IssuesTable } from '../components/IssuesTable'
 import { MetricCharts } from '../components/MetricCharts'
 import { MetricsTable } from '../components/MetricsTable'
 import { AdhocByDayChart } from '../components/AdhocByDayChart'
+import { NoTeamsCard } from '../components/NoTeamsCard'
+import { StatCard } from '../components/StatCard'
 import { VelocityTrendChart } from '../components/VelocityTrendChart'
 import { useTimezone } from '../hooks/useAppSettings'
 import { useCanRefresh } from '../hooks/useAuth'
@@ -25,28 +25,6 @@ import { useDashboardQueries } from '../hooks/useDashboardQueries'
 import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { buildDashboardView } from '../lib/dashboardMetrics'
 import { formatMoney, formatPercent, formatPoints } from '../lib/format'
-
-function StatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string
-  value: ReactNode
-  hint?: ReactNode
-}) {
-  return (
-    <Card className="gap-0 py-4">
-      <CardContent className="gap-1">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-2xl font-semibold tabular-nums">{value}</span>
-        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-      </CardContent>
-    </Card>
-  )
-}
 
 export function DashboardPage() {
   const timezone = useTimezone()
@@ -90,17 +68,7 @@ export function DashboardPage() {
       {teamsQuery.isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : teams.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No teams available</CardTitle>
-            <CardDescription>Import teams in Settings first.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link to="/config" className={buttonVariants()}>
-              Go to Settings
-            </Link>
-          </CardContent>
-        </Card>
+        <NoTeamsCard />
       ) : (
         <>
           <DashboardToolbar
