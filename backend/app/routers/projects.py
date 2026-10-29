@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..auth import require_refresher
@@ -18,6 +18,8 @@ from .teams import _tracked_sync_run
 
 router = APIRouter(prefix="/teams", tags=["projects"])
 
+COMPLETED_WITHIN_MONTHS = frozenset({1, 3, 6, 12})
+
 
 def _project_view(db: Session, team, project_id: int) -> ProjectOut:
     view = next(
@@ -30,10 +32,28 @@ def _project_view(db: Session, team, project_id: int) -> ProjectOut:
 
 
 @router.get("/{team_id}/projects", response_model=list[ProjectOut])
-def list_projects(team_id: int, db: Session = Depends(get_db)) -> list[ProjectOut]:
-    """Projects stored for a team, with point totals and man-day cost."""
+def list_projects(
+    team_id: int,
+    completed_within_months: int = Query(default=1),
+    db: Session = Depends(get_db),
+) -> list[ProjectOut]:
+    """Projects stored for a team, with point totals and man-day cost.
+
+    Projects completed before ``completed_within_months`` calendar months ago
+    are omitted, and their issues are not loaded. One month is the default.
+    """
+    if completed_within_months not in COMPLETED_WITHIN_MONTHS:
+        raise HTTPException(
+            status_code=422,
+            detail="completed_within_months must be 1, 3, 6, or 12",
+        )
     team = get_team_or_404(db, team_id)
-    return [ProjectOut(**asdict(view)) for view in compute_team_project_costs(db, team)]
+    return [
+        ProjectOut(**asdict(view))
+        for view in compute_team_project_costs(
+            db, team, completed_within_months=completed_within_months
+        )
+    ]
 
 
 @router.patch("/{team_id}/projects/{project_id}", response_model=ProjectOut)

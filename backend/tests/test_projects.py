@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -37,6 +37,7 @@ from app.projects import (
     HEALTH_LAGGING,
     HEALTH_ON_TRACK,
     compute_team_project_costs,
+    months_before,
     project_schedule_health,
 )
 from app.sync import sync_project, sync_team_projects
@@ -494,6 +495,182 @@ def _api_client():
     client = TestClient(app)
     authenticate(client)
     return client, testing_session
+
+
+def _bound_ids(parameters: object) -> set[int]:
+    found: set[int] = set()
+
+    def walk(value: object) -> None:
+        if isinstance(value, bool):
+            return
+        if isinstance(value, int):
+            found.add(value)
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+            return
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                walk(item)
+
+    walk(parameters)
+    return found
+
+
+def test_months_before_clamps_short_months() -> None:
+    assert months_before(datetime(2026, 3, 31, 15, 30, tzinfo=UTC), 1) == datetime(
+        2026, 2, 28, 15, 30, tzinfo=UTC
+    )
+    assert months_before(datetime(2024, 3, 31, 8, 0, tzinfo=UTC), 1) == datetime(
+        2024, 2, 29, 8, 0, tzinfo=UTC
+    )
+    assert months_before(datetime(2026, 1, 15, 0, 0, tzinfo=UTC), 1) == datetime(
+        2025, 12, 15, 0, 0, tzinfo=UTC
+    )
+    assert months_before(datetime(2026, 10, 28, 12, 0, tzinfo=UTC), 12) == datetime(
+        2025, 10, 28, 12, 0, tzinfo=UTC
+    )
+
+
+def test_completed_window_omits_old_projects_and_their_issues() -> None:
+    now = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
+    with _session() as db:
+        team = _add_team(db)
+        old = Project(
+            team_id=team.id,
+            linear_id="p-old",
+            name="Old",
+            state="completed",
+            completed_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        recent = Project(
+            team_id=team.id,
+            linear_id="p-recent",
+            name="Recent",
+            state="completed",
+            completed_at=datetime(2026, 10, 10, tzinfo=UTC),
+        )
+        active = Project(
+            team_id=team.id,
+            linear_id="p-active",
+            name="Active",
+            state="started",
+        )
+        undated = Project(
+            team_id=team.id,
+            linear_id="p-undated",
+            name="Undated",
+            state="completed",
+        )
+        db.add_all([old, recent, active, undated])
+        db.flush()
+        db.add_all(
+            [
+                ProjectIssue(
+                    team_id=team.id,
+                    project_id=old.id,
+                    linear_id="i-old",
+                    identifier="ENG-OLD",
+                    title="Old work",
+                    estimate=8.0,
+                    state_type="completed",
+                ),
+                ProjectIssue(
+                    team_id=team.id,
+                    project_id=recent.id,
+                    linear_id="i-recent",
+                    identifier="ENG-NEW",
+                    title="Recent work",
+                    estimate=2.0,
+                    state_type="completed",
+                ),
+                ProjectDueDateChange(
+                    team_id=team.id,
+                    project_id=old.id,
+                    linear_id="h-old",
+                    from_date="2026-07-01",
+                    to_date="2026-08-01",
+                    changed_at=datetime(2026, 7, 1, tzinfo=UTC),
+                ),
+            ]
+        )
+        db.commit()
+        old_id = old.id
+
+        captured: list[tuple[str, object]] = []
+
+        def capture(conn, cursor, statement, parameters, context, executemany) -> None:
+            lowered = statement.lower()
+            if "project_issues" in lowered or "project_due_date_changes" in lowered:
+                captured.append((statement, parameters))
+
+        bind = db.get_bind()
+        event.listen(bind, "before_cursor_execute", capture)
+        try:
+            recent_views = compute_team_project_costs(
+                db, team, now=now, completed_within_months=1
+            )
+        finally:
+            event.remove(bind, "before_cursor_execute", capture)
+        wider_views = compute_team_project_costs(
+            db, team, now=now, completed_within_months=3
+        )
+
+    assert [view.name for view in recent_views] == ["Active", "Recent", "Undated"]
+    assert recent_views[1].points == 2.0
+    assert [view.name for view in wider_views] == ["Active", "Old", "Recent", "Undated"]
+    assert captured, "expected issue and history queries for the projects that remain"
+    assert all(old_id not in _bound_ids(parameters) for _statement, parameters in captured)
+
+
+def test_projects_endpoint_filters_completed_projects_by_window() -> None:
+    client, sessions = _api_client()
+    now = datetime.now(UTC)
+    with sessions() as db:
+        team = _add_team(db)
+        old = Project(
+            team_id=team.id,
+            linear_id="p-old",
+            name="Old",
+            state="completed",
+            completed_at=datetime(2020, 1, 1, tzinfo=UTC),
+        )
+        mid = Project(
+            team_id=team.id,
+            linear_id="p-mid",
+            name="Mid",
+            state="completed",
+            completed_at=months_before(now, 2),
+        )
+        recent = Project(
+            team_id=team.id,
+            linear_id="p-recent",
+            name="Recent",
+            state="completed",
+            completed_at=now - timedelta(days=2),
+        )
+        active = Project(
+            team_id=team.id, linear_id="p-active", name="Active", state="started"
+        )
+        db.add_all([old, mid, recent, active])
+        db.commit()
+        team_id = team.id
+
+    default = client.get(f"/api/teams/{team_id}/projects")
+    assert default.status_code == 200
+    assert [row["name"] for row in default.json()] == ["Active", "Recent"]
+
+    wider = client.get(f"/api/teams/{team_id}/projects?completed_within_months=3")
+    assert wider.status_code == 200
+    assert [row["name"] for row in wider.json()] == ["Active", "Mid", "Recent"]
+
+    year = client.get(f"/api/teams/{team_id}/projects?completed_within_months=12")
+    assert year.status_code == 200
+    assert [row["name"] for row in year.json()] == ["Active", "Mid", "Recent"]
+
+    rejected = client.get(f"/api/teams/{team_id}/projects?completed_within_months=2")
+    assert rejected.status_code == 422
 
 
 def test_projects_endpoint_returns_cost_totals() -> None:

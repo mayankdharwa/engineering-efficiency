@@ -8,6 +8,9 @@ A point is half a man-day (``POINTS_PER_DAY`` = 2), matching cycle metrics:
 Canceled issues are stored but omitted from points and cost. Projects marked
 excluded locally still return their own totals so they can be reviewed, but
 team-level calculations skip them. Empty projects still appear with zero totals.
+A completion window drops projects finished before that many calendar months
+and does not load their issues or due-date history. Projects with no
+completion time stay in every window.
 
 Schedule health compares remaining points to leftover Mon–Fri days before the
 target date, at ``POINTS_PER_DAY``. Remaining days use the app timezone and
@@ -16,11 +19,12 @@ end-of-day cutoff. A one-day buffer keeps the project On Track.
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .app_settings import get_app_settings
@@ -79,6 +83,23 @@ class ProjectCostView:
     working_days_left: float | None
     due_date_history: list[DueDatePoint] = field(default_factory=list)
     issues: list[ProjectIssueView] = field(default_factory=list)
+
+
+def months_before(moment: datetime, months: int) -> datetime:
+    """The same clock time ``months`` calendar months before ``moment``.
+
+    The day is clamped when the earlier month is shorter, so 31 March minus
+    one month is 28 or 29 February.
+    """
+    if months < 1:
+        raise ValueError("months must be at least 1")
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    month_index = moment.month - 1 - months
+    year = moment.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(moment.day, calendar.monthrange(year, month)[1])
+    return moment.replace(year=year, month=month, day=day)
 
 
 def parse_project_date(value: str | None) -> date | None:
@@ -184,28 +205,43 @@ def _activity_changes(
 
 
 def compute_team_project_costs(
-    db: Session, team: Team, *, now: datetime | None = None
+    db: Session,
+    team: Team,
+    *,
+    now: datetime | None = None,
+    completed_within_months: int | None = None,
 ) -> list[ProjectCostView]:
-    """Aggregate stored project issues into per-project point and cost totals."""
+    """Aggregate stored project issues into per-project point and cost totals.
+
+    ``completed_within_months`` leaves out projects completed before that many
+    calendar months. Their issue rows and due-date history are not queried.
+    ``None`` keeps every non-archived project, which single-project updates use.
+    """
+    now = now or utcnow()
+    project_query = select(Project).where(
+        Project.team_id == team.id, Project.archived_at.is_(None)
+    )
+    if completed_within_months is not None:
+        cutoff = months_before(now, completed_within_months)
+        project_query = project_query.where(
+            or_(Project.completed_at.is_(None), Project.completed_at >= cutoff)
+        )
+    projects = list(db.scalars(project_query.order_by(Project.name)).all())
+    if not projects:
+        return []
+
     cost = get_team_cost(db, team.id)
     settings = get_app_settings(db)
-    now = now or utcnow()
-    projects = list(
-        db.scalars(
-            select(Project)
-            .where(Project.team_id == team.id, Project.archived_at.is_(None))
-            .order_by(Project.name)
-        ).all()
-    )
+    project_ids = [project.id for project in projects]
     issues_by_project: dict[int, list[ProjectIssue]] = {}
     for issue in db.scalars(
-        select(ProjectIssue).where(ProjectIssue.team_id == team.id)
+        select(ProjectIssue).where(ProjectIssue.project_id.in_(project_ids))
     ).all():
         issues_by_project.setdefault(issue.project_id, []).append(issue)
     stored_changes: dict[int, list[ProjectDueDateChange]] = {}
     for change in db.scalars(
         select(ProjectDueDateChange)
-        .where(ProjectDueDateChange.team_id == team.id)
+        .where(ProjectDueDateChange.project_id.in_(project_ids))
         .order_by(ProjectDueDateChange.id)
     ).all():
         stored_changes.setdefault(change.project_id, []).append(change)

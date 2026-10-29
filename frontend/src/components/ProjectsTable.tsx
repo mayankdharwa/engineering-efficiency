@@ -1,4 +1,4 @@
-import { createColumnHelper } from '@tanstack/react-table'
+import { createColumnHelper, type SortingState } from '@tanstack/react-table'
 import { CheckIcon, EllipsisVerticalIcon, TriangleAlertIcon } from 'lucide-react'
 import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +35,7 @@ import type { ProjectOut } from '../types'
 import { DataTable, type AppColumnDef } from './DataTable'
 
 const helper = createColumnHelper<typeof appTableFeatures, ProjectOut>()
+const DEFAULT_SORTING: SortingState = [{ id: 'due_date', desc: false }]
 const DONE_PERCENT_DIGITS = 1
 const COMPLETE_TONE = 'text-emerald-600 dark:text-emerald-400'
 const ALERT_TONE = 'text-amber-500 dark:text-amber-400'
@@ -438,6 +439,7 @@ export function ProjectsTable({
         emptyMessage={emptyMessage}
         onRowClick={onSelect}
         isRowSelected={(row) => row.id === selectedProjectId}
+        initialSorting={DEFAULT_SORTING}
       />
     </TooltipProvider>
   )

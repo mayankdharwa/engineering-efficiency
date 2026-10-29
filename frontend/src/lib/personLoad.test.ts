@@ -73,7 +73,7 @@ describe('buildPersonLoad', () => {
     )
   })
 
-  it('orders people by remaining started work and keeps a zero-point started project', () => {
+  it('orders people by name and keeps a zero-point started project', () => {
     const groups = buildPersonLoad(
       [
         project(1, 'Billing', [issue('Grace', 'started', 2), issue('Ada', 'started', null)]),
@@ -86,13 +86,13 @@ describe('buildPersonLoad', () => {
     assert.deepEqual(
       groups.map((group) => [group.person, group.nowRemaining, group.bars.map((bar) => bar.role)]),
       [
-        ['Grace', 2, ['now']],
         ['Ada', 0, ['now', 'next']],
         ['Bea', 0, ['next']],
+        ['Grace', 2, ['now']],
         ['Ida', 0, ['available']],
       ],
     )
-    const adaNow = groups[1]?.bars[0]
+    const adaNow = groups[0]?.bars[0]
     assert.equal(adaNow?.unestimated, 1)
     assert.equal(adaNow?.remaining, 0)
   })

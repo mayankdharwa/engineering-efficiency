@@ -1,3 +1,4 @@
+import type { ProjectRangeMonths } from './lib/projectRange'
 import type {
   AppSettingsOut,
   AuthStatusOut,
@@ -156,7 +157,10 @@ export const api = {
       method: 'POST',
     }),
 
-  listProjects: (teamId: number) => request<ProjectOut[]>(`/teams/${teamId}/projects`),
+  listProjects: (teamId: number, completedWithinMonths: ProjectRangeMonths) =>
+    request<ProjectOut[]>(
+      `/teams/${teamId}/projects?completed_within_months=${completedWithinMonths}`,
+    ),
   updateProject: (teamId: number, projectId: number, payload: { excluded: boolean }) =>
     request<ProjectOut>(`/teams/${teamId}/projects/${projectId}`, {
       method: 'PATCH',

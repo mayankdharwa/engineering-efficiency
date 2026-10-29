@@ -20,6 +20,7 @@ import { IssuesTable } from '../components/IssuesTable'
 import { PersonLoadChart } from '../components/PersonLoadChart'
 import { ProjectCostChart } from '../components/ProjectCostChart'
 import { ProjectDueDateTrajectory } from '../components/ProjectDueDateTrajectory'
+import { ProjectRangeSelect } from '../components/ProjectRangeSelect'
 import { ProjectSpanChart } from '../components/ProjectSpanChart'
 import { ProjectStateFilter } from '../components/ProjectStateFilter'
 import { ProjectsTable } from '../components/ProjectsTable'
@@ -28,6 +29,7 @@ import { useCanRefresh } from '../hooks/useAuth'
 import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { formatMoney, formatPoints, formatRelative } from '../lib/format'
 import { notifyError, notifySuccess } from '../lib/notify'
+import { DEFAULT_PROJECT_RANGE_MONTHS, type ProjectRangeMonths } from '../lib/projectRange'
 import { durationExceedsManDays } from '../lib/projectSchedule'
 import {
   DEFAULT_PROJECT_STATES,
@@ -83,10 +85,13 @@ export function ProjectsPage() {
     () => new Set(DEFAULT_PROJECT_STATES),
   )
   const [showDone, setShowDone] = useState(true)
+  const [completedWithinMonths, setCompletedWithinMonths] = useState<ProjectRangeMonths>(
+    DEFAULT_PROJECT_RANGE_MONTHS,
+  )
 
   const projectsQuery = useQuery({
-    queryKey: queryKeys.projects(selectedTeamId),
-    queryFn: () => api.listProjects(selectedTeamId as number),
+    queryKey: queryKeys.projects(selectedTeamId, completedWithinMonths),
+    queryFn: () => api.listProjects(selectedTeamId as number, completedWithinMonths),
     enabled: selectedTeamId !== null,
   })
   const cycleQuery = useQuery({
@@ -216,6 +221,10 @@ export function ProjectsPage() {
                 </p>
               )}
             </div>
+            <ProjectRangeSelect
+              value={completedWithinMonths}
+              onChange={setCompletedWithinMonths}
+            />
             <Button
               type="button"
               disabled={selectedTeamId === null || refreshMutation.isPending || !canRefresh}
@@ -238,9 +247,9 @@ export function ProjectsPage() {
           ) : projects.length === 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>No project data yet</CardTitle>
+                <CardTitle>No projects in this range</CardTitle>
                 <CardDescription>
-                  Refresh this team to load its projects.
+                  Choose a longer range, or refresh this team to load its projects.
                 </CardDescription>
               </CardHeader>
             </Card>

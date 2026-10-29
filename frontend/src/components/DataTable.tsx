@@ -1,4 +1,10 @@
-import { useTable, type ColumnDef, type Header, type RowData } from '@tanstack/react-table'
+import {
+  useTable,
+  type ColumnDef,
+  type Header,
+  type RowData,
+  type SortingState,
+} from '@tanstack/react-table'
 import { cn } from 'cn'
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from 'lucide-react'
 import { appTableFeatures } from '../lib/table'
@@ -29,6 +35,8 @@ interface DataTableProps<TData extends RowData> {
   centerExcept?: readonly string[]
   onRowClick?: (row: TData) => void
   isRowSelected?: (row: TData) => boolean
+  /** Sort applied the first time this table is shown. Header clicks still change it. */
+  initialSorting?: SortingState
 }
 
 function columnClassName(
@@ -92,8 +100,14 @@ export function DataTable<TData extends RowData>({
   centerExcept,
   onRowClick,
   isRowSelected,
+  initialSorting,
 }: DataTableProps<TData>) {
-  const table = useTable({ features: appTableFeatures, columns, data })
+  const table = useTable({
+    features: appTableFeatures,
+    columns,
+    data,
+    initialState: initialSorting ? { sorting: initialSorting } : undefined,
+  })
   const rows = table.getRowModel().rows
 
   return (

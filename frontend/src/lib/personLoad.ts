@@ -47,7 +47,7 @@ export interface PersonLoadGroup {
   person: string
   groupName: string | null
   groupColor: string | null
-  /** Remaining points on started projects. The chart sorts on this. */
+  /** Remaining points on started projects. */
   nowRemaining: number
   bars: PersonLoadBar[]
 }
@@ -110,8 +110,8 @@ function compareName(left: string, right: string): number {
  * then start date, then name. Projects after that one stay off the chart;
  * `moreQueued` counts them.
  *
- * People with the most remaining points on started work come first. Someone
- * with no open project work gets one available row.
+ * People are listed alphabetically. Someone with no open project work gets
+ * one available row.
  */
 export function buildPersonLoad(
   projects: readonly PersonLoadProjectInput[],
@@ -205,12 +205,7 @@ export function buildPersonLoad(
     })
   }
 
-  groups.sort(
-    (left, right) =>
-      right.nowRemaining - left.nowRemaining ||
-      groupRank(left) - groupRank(right) ||
-      compareName(left.person, right.person),
-  )
+  groups.sort((left, right) => compareName(left.person, right.person))
   return groups
 }
 
@@ -235,9 +230,3 @@ function toBar(
   }
 }
 
-/** Started work, then a queued project, then people with nothing open. */
-function groupRank(group: PersonLoadGroup): number {
-  if (group.bars.some((bar) => bar.role === 'now')) return 0
-  if (group.bars.some((bar) => bar.role === 'next')) return 1
-  return 2
-}

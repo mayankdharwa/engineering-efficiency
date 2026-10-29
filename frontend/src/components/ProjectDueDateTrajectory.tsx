@@ -351,8 +351,8 @@ function TrajectorySortControls({
 
 export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] }) {
   const timeZone = useTimezone()
-  const [sortKey, setSortKey] = useState<TrajectorySortKey>('name')
-  const [direction, setDirection] = useState<TrajectorySortDirection>('asc')
+  const [sortKey, setSortKey] = useState<TrajectorySortKey>('due')
+  const [direction, setDirection] = useState<TrajectorySortDirection>('desc')
   // Today's calendar date in the configured timezone, expressed in the same
   // UTC-midnight millis the chart maps due dates to so the line aligns.
   const today = useMemo(() => {
