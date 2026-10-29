@@ -1,16 +1,15 @@
 import type { QueryClient } from '@tanstack/react-query'
+import type { Scope } from './scope'
 
 /** Shared query key for the app-wide metric settings. */
 export const APP_SETTINGS_QUERY_KEY = ['settings'] as const
 
-function withOptionalCycle<TPrefix extends string>(
-  prefix: TPrefix,
-  teamId: number | null,
-  cycleId?: number | null,
-) {
-  return cycleId === undefined
-    ? ([prefix, teamId] as const)
-    : ([prefix, teamId, cycleId] as const)
+/** Team + optional cycle key; a null scope marks a disabled query. */
+function scopeKey<TPrefix extends string>(prefix: TPrefix, scope: Scope | null) {
+  if (scope === null) return [prefix, null] as const
+  return scope.cycleId == null
+    ? ([prefix, scope.teamId] as const)
+    : ([prefix, scope.teamId, scope.cycleId] as const)
 }
 
 export const queryKeys = {
@@ -20,12 +19,9 @@ export const queryKeys = {
   config: ['config'] as const,
   settings: APP_SETTINGS_QUERY_KEY,
   cycles: (teamId: number | null) => ['cycles', teamId] as const,
-  cycle: (teamId: number | null, cycleId?: number | null) =>
-    withOptionalCycle('cycle', teamId, cycleId),
-  issues: (teamId: number | null, cycleId?: number | null) =>
-    withOptionalCycle('issues', teamId, cycleId),
-  stats: (teamId: number | null, cycleId?: number | null) =>
-    withOptionalCycle('stats', teamId, cycleId),
+  cycle: (scope: Scope | null) => scopeKey('cycle', scope),
+  issues: (scope: Scope | null) => scopeKey('issues', scope),
+  stats: (scope: Scope | null) => scopeKey('stats', scope),
   /** Prefix matching every team's stats (e.g. after timezone changes). */
   allStats: ['stats'] as const,
   groups: (teamId: number | null) => ['groups', teamId] as const,
@@ -38,11 +34,12 @@ export const queryKeys = {
 }
 
 function teamScopedKeys(teamId: number) {
+  const scope: Scope = { teamId }
   return [
-    queryKeys.issues(teamId),
+    queryKeys.issues(scope),
     queryKeys.cycles(teamId),
-    queryKeys.cycle(teamId),
-    queryKeys.stats(teamId),
+    queryKeys.cycle(scope),
+    queryKeys.stats(scope),
     queryKeys.groups(teamId),
     queryKeys.teamCost(teamId),
     queryKeys.projects(teamId),

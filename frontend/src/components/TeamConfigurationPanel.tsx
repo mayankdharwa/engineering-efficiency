@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,6 +24,7 @@ import { useConfigTeam } from '../hooks/useConfigTeam'
 import { UNASSIGNED_KEY } from '../lib/groups'
 import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import { requireScope, type Scope } from '../lib/scope'
 import type { CycleSettingsIn, GroupOut } from '../types'
 import { CostConfigurationPanel } from './CostConfigurationPanel'
 import { OptionSelect } from './OptionSelect'
@@ -35,10 +36,10 @@ export function TeamConfigurationPanel() {
   const queryClient = useQueryClient()
   const { teamId } = useConfigTeam()
 
+  const scope: Scope | null = teamId === null ? null : { teamId }
   const cycleQuery = useQuery({
-    queryKey: queryKeys.cycle(teamId),
-    queryFn: () => api.getCycleSettings(teamId as number),
-    enabled: teamId !== null,
+    queryKey: queryKeys.cycle(scope),
+    queryFn: scope === null ? skipToken : () => api.getCycleSettings(scope),
   })
 
   const [availability, setAvailability] = useState<Record<string, number>>({})
@@ -63,8 +64,7 @@ export function TeamConfigurationPanel() {
   }, [cycleQuery.data])
 
   const saveMutation = useMutation({
-    mutationFn: (payload: CycleSettingsIn) =>
-      api.updateCycleSettings(teamId as number, payload),
+    mutationFn: (payload: CycleSettingsIn) => api.updateCycleSettings(requireScope(scope), payload),
     onSuccess: () => {
       notifySuccess('Team configuration saved.')
       if (teamId !== null) invalidateTeamData(queryClient, teamId)

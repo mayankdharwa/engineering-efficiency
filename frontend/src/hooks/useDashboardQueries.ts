@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import type { Scope } from '../lib/scope'
 import { useSelectedCycleId } from '../lib/selection'
 
 /** Cycles, issues, stats, default cycle selection, and refresh for one team. */
@@ -9,22 +10,24 @@ export function useDashboardQueries(selectedTeamId: number | null) {
 
   const cyclesQuery = useQuery({
     queryKey: queryKeys.cycles(selectedTeamId),
-    queryFn: () => api.listCycles(selectedTeamId as number),
-    enabled: selectedTeamId !== null,
+    queryFn: selectedTeamId === null ? skipToken : () => api.listCycles(selectedTeamId),
   })
   const cycles = cyclesQuery.data ?? []
   const [selectedCycleId, setSelectedCycleId] = useSelectedCycleId(cycles, selectedTeamId)
 
+  const scope: Scope | null =
+    selectedTeamId === null || selectedCycleId === null
+      ? null
+      : { teamId: selectedTeamId, cycleId: selectedCycleId }
+
   const issuesQuery = useQuery({
-    queryKey: queryKeys.issues(selectedTeamId, selectedCycleId),
-    queryFn: () => api.listIssues(selectedTeamId as number, selectedCycleId),
-    enabled: selectedTeamId !== null && selectedCycleId !== null,
+    queryKey: queryKeys.issues(scope),
+    queryFn: scope === null ? skipToken : () => api.listIssues(scope),
   })
 
   const statsQuery = useQuery({
-    queryKey: queryKeys.stats(selectedTeamId, selectedCycleId),
-    queryFn: () => api.getStats(selectedTeamId as number, selectedCycleId),
-    enabled: selectedTeamId !== null && selectedCycleId !== null,
+    queryKey: queryKeys.stats(scope),
+    queryFn: scope === null ? skipToken : () => api.getStats(scope),
   })
 
   const refreshMutation = useMutation({

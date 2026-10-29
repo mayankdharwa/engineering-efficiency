@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,6 +16,7 @@ import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { notifyError, notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import { requireTeamId } from '../lib/scope'
 import { OptionSelect } from './OptionSelect'
 import { QueryPanelBody } from './QueryPanelBody'
 
@@ -36,8 +37,7 @@ export function CostConfigurationPanel() {
 
   const costQuery = useQuery({
     queryKey: queryKeys.teamCost(teamId),
-    queryFn: () => api.getTeamCost(teamId as number),
-    enabled: teamId !== null,
+    queryFn: teamId === null ? skipToken : () => api.getTeamCost(teamId),
   })
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export function CostConfigurationPanel() {
 
   const saveMutation = useMutation({
     mutationFn: (payload: { currency: string; man_day_cost: number }) =>
-      api.updateTeamCost(teamId as number, payload),
+      api.updateTeamCost(requireTeamId(teamId), payload),
     onSuccess: (data) => {
       notifySuccess('Cost configuration saved.')
       setCurrency(data.currency)

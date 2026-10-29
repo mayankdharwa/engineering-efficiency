@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +15,7 @@ import { useConfigTeam } from '../hooks/useConfigTeam'
 import { isHexColor, parseHexColor } from '../lib/color'
 import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import { requireTeamId } from '../lib/scope'
 import type { GroupOut } from '../types'
 import { GroupBadge } from './GroupBadge'
 import { QueryPanelBody } from './QueryPanelBody'
@@ -80,8 +81,7 @@ export function GroupsPanel() {
 
   const groupsQuery = useQuery({
     queryKey: queryKeys.groups(teamId),
-    queryFn: () => api.listGroups(teamId as number),
-    enabled: teamId !== null,
+    queryFn: teamId === null ? skipToken : () => api.listGroups(teamId),
   })
   const groups: GroupOut[] = groupsQuery.data ?? []
 
@@ -105,7 +105,7 @@ export function GroupsPanel() {
 
   const createGroup = useMutation({
     mutationFn: (payload: { name: string; color: string }) =>
-      api.createGroup(teamId as number, payload),
+      api.createGroup(requireTeamId(teamId), payload),
     onSuccess: (group) => {
       setNewGroupName('')
       setNewGroupColor(nextGroupColor([...groups, group]))
@@ -116,7 +116,7 @@ export function GroupsPanel() {
 
   const updateGroup = useMutation({
     mutationFn: ({ id, name, color }: { id: number; name: string; color: string }) =>
-      api.updateGroup(teamId as number, id, { name, color }),
+      api.updateGroup(requireTeamId(teamId), id, { name, color }),
     onSuccess: (group) => {
       notifySuccess(`Updated group '${group.name}'.`)
       invalidate()
@@ -124,7 +124,7 @@ export function GroupsPanel() {
   })
 
   const deleteGroup = useMutation({
-    mutationFn: (id: number) => api.deleteGroup(teamId as number, id),
+    mutationFn: (id: number) => api.deleteGroup(requireTeamId(teamId), id),
     onSuccess: () => {
       notifySuccess('Group deleted.')
       invalidate()

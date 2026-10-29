@@ -1,4 +1,5 @@
 import type { ProjectRangeMonths } from './lib/projectRange'
+import type { Scope } from './lib/scope'
 import type {
   AppSettingsOut,
   AuthStatusOut,
@@ -70,6 +71,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
+/** Append `cycle_id` when the scope names a specific cycle. */
+function cyclePath(path: string, scope: Scope): string {
+  return scope.cycleId != null ? `${path}?cycle_id=${scope.cycleId}` : path
+}
+
 export const api = {
   getAuthStatus: () => request<AuthStatusOut>('/auth/status'),
   setupAccount: (username: string, password: string) =>
@@ -118,40 +124,19 @@ export const api = {
   deleteTeam: (teamId: number) =>
     request<void>(`/teams/${teamId}`, { method: 'DELETE' }),
 
-  listIssues: (teamId: number, cycleId?: number | null) =>
-    request<IssueOut[]>(
-      cycleId != null
-        ? `/teams/${teamId}/issues?cycle_id=${cycleId}`
-        : `/teams/${teamId}/issues`,
-    ),
-  getStats: (teamId: number, cycleId?: number | null) =>
-    request<TeamStatsOut>(
-      cycleId != null
-        ? `/teams/${teamId}/stats?cycle_id=${cycleId}`
-        : `/teams/${teamId}/stats`,
-    ),
+  listIssues: (scope: Scope) =>
+    request<IssueOut[]>(cyclePath(`/teams/${scope.teamId}/issues`, scope)),
+  getStats: (scope: Scope) =>
+    request<TeamStatsOut>(cyclePath(`/teams/${scope.teamId}/stats`, scope)),
 
   listCycles: (teamId: number) => request<CycleOut[]>(`/teams/${teamId}/cycles`),
-  getCycleSettings: (teamId: number, cycleId?: number | null) =>
-    request<CycleSettingsOut>(
-      cycleId != null
-        ? `/teams/${teamId}/cycle?cycle_id=${cycleId}`
-        : `/teams/${teamId}/cycle`,
-    ),
-  updateCycleSettings: (
-    teamId: number,
-    payload: CycleSettingsIn,
-    cycleId?: number | null,
-  ) =>
-    request<CycleSettingsOut>(
-      cycleId != null
-        ? `/teams/${teamId}/cycle?cycle_id=${cycleId}`
-        : `/teams/${teamId}/cycle`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      },
-    ),
+  getCycleSettings: (scope: Scope) =>
+    request<CycleSettingsOut>(cyclePath(`/teams/${scope.teamId}/cycle`, scope)),
+  updateCycleSettings: (scope: Scope, payload: CycleSettingsIn) =>
+    request<CycleSettingsOut>(cyclePath(`/teams/${scope.teamId}/cycle`, scope), {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
   finalizeCycle: (teamId: number) =>
     request<CycleSettingsOut>(`/teams/${teamId}/cycle/finalize`, {
       method: 'POST',

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,6 +18,7 @@ import { useConfigTeam } from '../hooks/useConfigTeam'
 import { formatCycle } from '../lib/format'
 import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import { requireScope, requireTeamId, type Scope } from '../lib/scope'
 import { useSelectedCycleId } from '../lib/selection'
 import { isoDateInTimeZone, zonedDateToUtcIso } from '../lib/timezone'
 import type { CycleSettingsIn } from '../types'
@@ -34,16 +35,17 @@ export function CycleConfigurationPanel() {
 
   const cyclesQuery = useQuery({
     queryKey: queryKeys.cycles(teamId),
-    queryFn: () => api.listCycles(teamId as number),
-    enabled: teamId !== null,
+    queryFn: teamId === null ? skipToken : () => api.listCycles(teamId),
   })
   const cycles = cyclesQuery.data ?? []
   const [selectedCycleId, setSelectedCycleId] = useSelectedCycleId(cycles, teamId)
 
+  const scope: Scope | null =
+    teamId === null || selectedCycleId === null ? null : { teamId, cycleId: selectedCycleId }
+
   const cycleQuery = useQuery({
-    queryKey: queryKeys.cycle(teamId, selectedCycleId),
-    queryFn: () => api.getCycleSettings(teamId as number, selectedCycleId),
-    enabled: teamId !== null && selectedCycleId !== null,
+    queryKey: queryKeys.cycle(scope),
+    queryFn: scope === null ? skipToken : () => api.getCycleSettings(scope),
   })
 
   const [workingDays, setWorkingDays] = useState('')
@@ -61,7 +63,7 @@ export function CycleConfigurationPanel() {
 
   const saveMutation = useMutation({
     mutationFn: (payload: CycleSettingsIn) =>
-      api.updateCycleSettings(teamId as number, payload, selectedCycleId),
+      api.updateCycleSettings(requireScope(scope), payload),
     onSuccess: () => {
       notifySuccess('Cycle configuration saved.')
       if (teamId !== null) invalidateTeamData(queryClient, teamId)
@@ -71,7 +73,7 @@ export function CycleConfigurationPanel() {
   const cycle = cycleQuery.data
 
   const finalizeMutation = useMutation({
-    mutationFn: () => api.finalizeCycle(teamId as number),
+    mutationFn: () => api.finalizeCycle(requireTeamId(teamId)),
     onSuccess: () => {
       notifySuccess('Cycle finalized.')
       if (teamId !== null) invalidateTeamData(queryClient, teamId)

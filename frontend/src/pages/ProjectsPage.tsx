@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCwIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,7 @@ import {
   filterProjectsByState,
 } from '../lib/projectState'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import type { Scope } from '../lib/scope'
 import type { ProjectOut } from '../types'
 
 export function ProjectsPage() {
@@ -70,13 +71,15 @@ export function ProjectsPage() {
 
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects(selectedTeamId, completedWithinMonths),
-    queryFn: () => api.listProjects(selectedTeamId as number, completedWithinMonths),
-    enabled: selectedTeamId !== null,
+    queryFn:
+      selectedTeamId === null
+        ? skipToken
+        : () => api.listProjects(selectedTeamId, completedWithinMonths),
   })
+  const scope: Scope | null = selectedTeamId === null ? null : { teamId: selectedTeamId }
   const cycleQuery = useQuery({
-    queryKey: queryKeys.cycle(selectedTeamId),
-    queryFn: () => api.getCycleSettings(selectedTeamId as number),
-    enabled: selectedTeamId !== null,
+    queryKey: queryKeys.cycle(scope),
+    queryFn: scope === null ? skipToken : () => api.getCycleSettings(scope),
   })
   const projects = projectsQuery.data ?? []
   const includedProjects = useMemo(
