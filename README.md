@@ -70,7 +70,8 @@ The app has three top-level pages: **Cycles**, **Projects**, and **Settings**.
 
 In the group and per-person tables:
 
-- **Velocity** is orange above 100%, red below 90%, and otherwise neutral.
+- **Velocity** is red at 90% or below, neutral between 90% and 100% (inclusive),
+  and muted red above 100%. Every band except the neutral one is bold.
 - **Bandwidth** and **planning efficiency** show the percentage plus the matching
   fraction (`taken/capacity` and `planned/taken`). Values below 100% are amber;
   values above 100% are red; exactly 100% is neutral.

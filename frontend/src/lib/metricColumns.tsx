@@ -1,18 +1,27 @@
 import { createColumnHelper } from '@tanstack/react-table'
 import { AvailablePointsCell } from '../components/AvailablePointsCell'
-import { BandwidthCell, type RatioTone } from '../components/BandwidthCell'
+import { BandwidthCell, type RatioEmphasis, type RatioTone } from '../components/BandwidthCell'
 import type { AppColumnDef } from '../components/DataTable'
 import { formatPoints } from './format'
 import { appTableFeatures } from './table'
 import type { PointMetrics } from '../types'
 
-/** Velocity tone: orange above 100%, red below 90%, otherwise neutral. */
-const velocityTone: RatioTone = (displayed) => {
-  if (displayed === null) return 'text-muted-foreground'
-  if (displayed > 100) return 'text-orange-600 dark:text-orange-400'
-  if (displayed < 90) return 'text-destructive'
-  return 'text-foreground'
+/** Velocity bands; the first matching upper bound wins and `null` is the final band. */
+const velocityBands = [
+  { upTo: 90, tone: 'text-destructive', bold: true },
+  { upTo: 100, tone: 'text-foreground', bold: false },
+  { upTo: null, tone: 'text-destructive/60', bold: true },
+] as const
+
+function velocityBand(displayed: number | null) {
+  if (displayed === null) return null
+  return velocityBands.find((band) => band.upTo === null || displayed <= band.upTo) ?? null
 }
+
+const velocityTone: RatioTone = (displayed) =>
+  velocityBand(displayed)?.tone ?? 'text-muted-foreground'
+
+const velocityEmphasis: RatioEmphasis = (displayed) => velocityBand(displayed)?.bold ?? false
 
 /**
  * Shared bandwidth / available / velocity / adhoc / planning columns.
@@ -52,6 +61,7 @@ export function createSharedMetricColumns<T extends PointMetrics>(
           <BandwidthCell
             ratio={row.velocity}
             tone={velocityTone}
+            emphasis={velocityEmphasis}
             detail={`${formatPoints(row.done_points)}/${formatPoints(row.expected_points)}`}
           />
         )

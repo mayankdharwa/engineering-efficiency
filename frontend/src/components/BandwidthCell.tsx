@@ -20,19 +20,32 @@ function bandwidthTone(displayed: number | null): string {
 /** Maps a displayed percentage to the tone class for the ratio. */
 export type RatioTone = (displayed: number | null) => string
 
+/** Decides whether a displayed percentage is rendered bold. */
+export type RatioEmphasis = (displayed: number | null) => boolean
+
+/** Bold the ratio unless it is exactly 100%. */
+const bandwidthEmphasis: RatioEmphasis = (displayed) => displayed !== null && displayed !== 100
+
 interface BandwidthCellProps {
   ratio: number | null
   /** Parenthetical next to the percentage, e.g. "18/20". */
   detail: ReactNode
   /** Colour mapping; defaults to the bandwidth/planning scale. */
   tone?: RatioTone
+  /** Bold mapping; defaults to the bandwidth/planning scale. */
+  emphasis?: RatioEmphasis
 }
 
 /** Combined ratio cell, e.g. "90.0% (18/20)". */
-export function BandwidthCell({ ratio, detail, tone = bandwidthTone }: BandwidthCellProps) {
+export function BandwidthCell({
+  ratio,
+  detail,
+  tone = bandwidthTone,
+  emphasis = bandwidthEmphasis,
+}: BandwidthCellProps) {
   const displayed = displayedPercent(ratio)
   const percent = displayed === null ? '—' : formatPercent(ratio, BANDWIDTH_DIGITS)
-  const weight = displayed !== null && displayed !== 100 ? 'font-bold' : 'font-normal'
+  const weight = emphasis(displayed) ? 'font-bold' : 'font-normal'
   return (
     <span className="tabular-nums">
       <span className={`${weight} ${tone(displayed)}`}>{percent}</span>{' '}
