@@ -174,7 +174,7 @@ export function AdhocByDayChart({ dates, points }: AdhocByDayChartProps) {
               {assignees.map((assignee, index) => (
                 <li key={assignee} className="flex items-center gap-1.5 text-xs text-foreground">
                   <span
-                    className="size-2.5 shrink-0 rounded-[2px]"
+                    className="size-2.5 shrink-0 rounded-xs"
                     style={{ background: ASSIGNEE_COLORS[index % ASSIGNEE_COLORS.length] }}
                     aria-hidden
                   />

@@ -165,14 +165,14 @@ export function PersonLoadChart({
         <div className={PERSON_GRID}>
           <div className="hidden sm:block" />
           <div className="flex flex-col gap-1">
-            <div className="relative h-4 text-[11px] text-muted-foreground">
+            <div className="relative h-4 text-xs text-muted-foreground">
               {ticks.map((tick) => (
                 <span key={tick} className="absolute tabular-nums" style={tickStyle(tick, maxPoints)}>
                   {formatPoints(tick)}
                 </span>
               ))}
             </div>
-            <p className="text-center text-[11px] text-muted-foreground">Points</p>
+            <p className="text-center text-xs text-muted-foreground">Points</p>
           </div>
         </div>
       </div>

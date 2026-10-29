@@ -300,7 +300,7 @@ function createColumns(
   return [
     helper.accessor('name', {
       header: 'Project',
-      meta: { className: 'w-[33%] max-w-[33%] overflow-hidden' },
+      meta: { className: 'w-1/3 max-w-1/3 overflow-hidden' },
       cell: (ctx) => {
         const project = ctx.row.original
         return (
