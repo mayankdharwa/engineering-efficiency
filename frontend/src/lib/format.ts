@@ -59,6 +59,13 @@ export function formatCalendarDate(value: string | null | undefined): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/** Format a UTC instant (ms) as a short calendar date, e.g. "Sep 30". */
+export function formatUtcDay(value: number): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
 /** Format a 0..1 ratio (bandwidth can exceed 1) as a percentage. */
 export function formatPercent(
   value: number | null | undefined,

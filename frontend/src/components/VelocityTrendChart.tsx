@@ -10,23 +10,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { formatPercent } from '../lib/format'
+import { formatCalendarDate, formatPercent } from '../lib/format'
 import type { VelocityTrendPointOut } from '../types'
 
 const COLOR_LINE = 'var(--primary)'
 const COLOR_TARGET = 'var(--muted-foreground)'
-
-/** Render an ISO date as a short axis label, e.g. "Sep 30".
- *
- * The dates come from the backend already resolved to the configured working
- * timezone, so format them as UTC to render exactly that calendar day.
- */
-function dayLabel(value: unknown): string {
-  const text = String(value)
-  const date = new Date(`${text}T00:00:00Z`)
-  if (Number.isNaN(date.getTime())) return text
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
-}
 
 interface VelocityTrendChartProps {
   points: VelocityTrendPointOut[]
@@ -50,7 +38,7 @@ export function VelocityTrendChart({ points }: VelocityTrendChartProps) {
           x: {
             scale: () => scalePoint<string>(),
             grid: true,
-            axis: { label: 'Day', ticks: { format: dayLabel } },
+            axis: { label: 'Day', ticks: { format: (value) => formatCalendarDate(String(value)) } },
           },
           y: {
             scale: scaleLinear,

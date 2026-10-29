@@ -1,3 +1,5 @@
+import type { FilterSelection } from './filterSelection'
+import { isAllSelected } from './filterSelection'
 import type { ProjectOut } from '../types'
 
 /** Sentinel value for the "All states" option in the filter select. */
@@ -47,14 +49,10 @@ export function formatProjectState(state: string | null | undefined): string {
 }
 
 /** An empty selection means every state. */
-export function isAllProjectStates(selected: Set<string>): boolean {
-  return selected.size === 0
-}
-
 export function filterProjectsByState(
   projects: ProjectOut[],
-  selected: Set<string>,
+  selected: FilterSelection,
 ): ProjectOut[] {
-  if (isAllProjectStates(selected)) return projects
+  if (isAllSelected(selected)) return projects
   return projects.filter((project) => selected.has(projectFilterKey(project)))
 }

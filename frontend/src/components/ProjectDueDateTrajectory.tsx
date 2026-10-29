@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { useTimezone } from '../hooks/useAppSettings'
 import { chartHeight, truncateLabel } from '../lib/chart'
-import { formatCalendarDate, formatDateTime } from '../lib/format'
+import { formatCalendarDate, formatDateTime, formatUtcDay } from '../lib/format'
 import { isProjectCompleted } from '../lib/projectState'
-import { isoDateInTimeZone } from '../lib/timezone'
+import { isoDateInTimeZone, isoDateToUtcMs, MS_PER_DAY } from '../lib/timezone'
 import type { ProjectDueDateChangeOut, ProjectOut } from '../types'
 import { OptionSelect } from './OptionSelect'
 
@@ -36,7 +36,6 @@ const COLOR_COMPLETE = 'var(--trajectory-complete)'
 /** Reference line marking the current day, distinct from the plan/shift tones. */
 const COLOR_TODAY = 'var(--trajectory-today)'
 const CHECK_OFFSET = 16
-const MS_PER_DAY = 86_400_000
 const NAME_MAX = 28
 
 interface ChartDatum {
@@ -66,22 +65,6 @@ interface Segment extends ChartDatum {
   movement: string
 }
 
-function calendarMs(value: string | null): number | null {
-  if (!value) return null
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
-  if (!match) return null
-  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-}
-
-function dateTick(value: unknown): string {
-  const timestamp = Number(value)
-  if (!Number.isFinite(timestamp)) return ''
-  const date = new Date(timestamp)
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
-  return formatCalendarDate(`${date.getUTCFullYear()}-${month}-${day}`)
-}
-
 function movementLabel(start: number, end: number): string {
   const days = Math.round((end - start) / MS_PER_DAY)
   if (days === 0) return 'Unchanged'
@@ -100,10 +83,10 @@ function spanLabel(start: number, end: number): string {
 function currentDueMs(project: ProjectOut): number | null {
   const dates = dueDates(project.due_date_history)
   for (let index = dates.length - 1; index >= 0; index -= 1) {
-    const at = calendarMs(dates[index]?.date ?? null)
+    const at = isoDateToUtcMs(dates[index]?.date ?? null)
     if (at !== null) return at
   }
-  return calendarMs(project.target_date)
+  return isoDateToUtcMs(project.target_date)
 }
 
 function compareProjects(
@@ -116,8 +99,8 @@ function compareProjects(
     left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) || left.id - right.id
   if (key === 'name') return direction === 'asc' ? nameOrder : -nameOrder
 
-  const leftMs = key === 'start' ? calendarMs(left.start_date) : currentDueMs(left)
-  const rightMs = key === 'start' ? calendarMs(right.start_date) : currentDueMs(right)
+  const leftMs = key === 'start' ? isoDateToUtcMs(left.start_date) : currentDueMs(left)
+  const rightMs = key === 'start' ? isoDateToUtcMs(right.start_date) : currentDueMs(right)
   if (leftMs === null && rightMs === null) return nameOrder
   if (leftMs === null) return 1
   if (rightMs === null) return -1
@@ -151,12 +134,12 @@ function trajectoryFor(
 ): { stops: DateStop[]; segments: Segment[]; checks: DateStop[] } | null {
   const dates = dueDates(project.due_date_history)
   const dueStops = dates.flatMap((item) => {
-    const at = calendarMs(item.date)
+    const at = isoDateToUtcMs(item.date)
     return at === null ? [] : [{ ...item, at }]
   })
   if (dueStops.length === 0) return null
 
-  const startAt = calendarMs(project.start_date)
+  const startAt = isoDateToUtcMs(project.start_date)
   const startDate = startAt === null ? null : project.start_date
   const dueLabels = dueStops.map((stop) => formatCalendarDate(stop.date))
   const startLabel = startDate ? formatCalendarDate(startDate) : null
@@ -334,7 +317,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
   // UTC-midnight millis the chart maps due dates to so the line aligns.
   const today = useMemo(() => {
     const iso = isoDateInTimeZone(new Date().toISOString(), timeZone)
-    return calendarMs(iso)
+    return isoDateToUtcMs(iso)
   }, [timeZone])
   const sortedProjects = useMemo(
     () => [...projects].sort((left, right) => compareProjects(left, right, sortKey, direction)),
@@ -475,7 +458,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
         x: {
           scale: scaleLinear().domain([min - pad, max + pad]),
           grid: true,
-          axis: { label: 'Date', ticks: { format: dateTick } },
+          axis: { label: 'Date', ticks: { format: (value) => formatUtcDay(Number(value)) } },
         },
         y: {
           scale: () => scaleBand<string>().domain(order).padding(0.45),

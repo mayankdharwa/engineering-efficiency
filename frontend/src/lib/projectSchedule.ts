@@ -1,7 +1,5 @@
 import { DEFAULT_POINTS_PER_DAY } from './capacity.ts'
-import { parseIsoDate } from './timezone.ts'
-
-const MS_PER_DAY = 86_400_000
+import { MS_PER_DAY, parseIsoDate } from './timezone.ts'
 
 function utcMidnight(year: number, month: number, day: number): number {
   return Date.UTC(year, month - 1, day)

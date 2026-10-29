@@ -65,7 +65,14 @@ export function parseIsoDate(
   return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) }
 }
 
-const MS_PER_DAY = 86_400_000
+/** UTC-midnight milliseconds for a `YYYY-MM-DD` calendar date, or null. */
+export function isoDateToUtcMs(value: string | null | undefined): number | null {
+  const date = parseIsoDate(value)
+  if (!date) return null
+  return Date.UTC(date.year, date.month - 1, date.day)
+}
+
+export const MS_PER_DAY = 86_400_000
 
 /** Calendar dates of `targetDate` and today in `timeZone`, or ``null``. */
 function dueAndToday(

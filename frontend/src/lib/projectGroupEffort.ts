@@ -4,7 +4,7 @@ import { workingDaysForPoints } from './projectSchedule.ts'
 export const UNASSIGNED_GROUP_KEY = 'unassigned'
 export const UNASSIGNED_GROUP_LABEL = 'Unassigned'
 
-const CANCELED = 'canceled'
+import { LinearStateType } from './issueState.ts'
 
 export interface GroupEffortIssue {
   assigneeName: string | null
@@ -41,7 +41,7 @@ function normalizeName(name: string): string {
 }
 
 function isCanceled(stateType: string | null): boolean {
-  return stateType === CANCELED
+  return stateType === LinearStateType.canceled
 }
 
 /**

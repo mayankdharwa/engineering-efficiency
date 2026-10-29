@@ -1,7 +1,4 @@
-/** Linear workflow types, matching `LinearStateType` in issueState.ts. */
-const STARTED = 'started'
-const COMPLETED = 'completed'
-const CANCELED = 'canceled'
+import { isCompletedState, LinearStateType } from './issueState.ts'
 
 export interface PersonLoadIssue {
   assigneeName: string | null
@@ -74,11 +71,7 @@ function isSkippedProject(state: string | null): boolean {
 }
 
 function isCanceledIssue(stateType: string | null): boolean {
-  return stateType === CANCELED
-}
-
-function isCompletedIssue(stateType: string | null): boolean {
-  return stateType === COMPLETED
+  return stateType === LinearStateType.canceled
 }
 
 /** Calendar prefix so datetime strings still sort as dates. Missing dates sort last. */
@@ -150,14 +143,14 @@ export function buildPersonLoad(
       }
       slices.set(project.id, slice)
       const estimate = issue.estimate ?? 0
-      if (isCompletedIssue(issue.stateType)) {
+      if (isCompletedState(issue.stateType)) {
         slice.done += estimate
         continue
       }
       slice.open = true
       slice.remaining += estimate
       if (issue.estimate === null) slice.unestimated += 1
-      if (issue.stateType === STARTED) slice.started = true
+      if (issue.stateType === LinearStateType.started) slice.started = true
     }
   }
 

@@ -36,7 +36,7 @@ export function DashboardPage() {
     setTeamId: setSelectedTeamId,
     selectedTeam,
   } = useSelectedTeam()
-  // Empty set means all groups (see isAllGroups / groupKey).
+  // Empty set means all groups (see isAllSelected / groupKey).
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
   const [showDone, setShowDone] = useState(false)
 

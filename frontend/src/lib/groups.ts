@@ -1,3 +1,5 @@
+import type { FilterSelection } from './filterSelection'
+import { isAllSelected } from './filterSelection'
 import type {
   AdhocByDayPointOut,
   GroupMetricsOut,
@@ -15,33 +17,28 @@ export function groupKey(groupId: number | null): string {
   return groupId === null ? UNASSIGNED_KEY : String(groupId)
 }
 
-/** An empty selection means "All groups". */
-export function isAllGroups(selected: Set<string>): boolean {
-  return selected.size === 0
-}
-
 export function filterMembers(
   members: MemberMetricsOut[],
-  selected: Set<string>,
+  selected: FilterSelection,
 ): MemberMetricsOut[] {
-  if (isAllGroups(selected)) return members
+  if (isAllSelected(selected)) return members
   return members.filter((member) => selected.has(groupKey(member.group_id)))
 }
 
 /** Keep adhoc-by-day slices whose assignee belongs to the selected groups. */
 export function filterAdhocByDay(
   points: AdhocByDayPointOut[],
-  selected: Set<string>,
+  selected: FilterSelection,
 ): AdhocByDayPointOut[] {
-  if (isAllGroups(selected)) return points
+  if (isAllSelected(selected)) return points
   return points.filter((point) => selected.has(groupKey(point.group_id)))
 }
 
 export function selectGroups(
   groups: GroupMetricsOut[],
-  selected: Set<string>,
+  selected: FilterSelection,
 ): GroupMetricsOut[] {
-  if (isAllGroups(selected)) return groups
+  if (isAllSelected(selected)) return groups
   return groups.filter((group) => selected.has(groupKey(group.group_id)))
 }
 

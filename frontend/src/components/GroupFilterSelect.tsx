@@ -1,13 +1,7 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { ALL_GROUPS_KEY, UNASSIGNED_KEY } from '../lib/groups'
 import type { GroupOut } from '../types'
 import { GroupBadge } from './GroupBadge'
+import { MultiSelectFilter } from './MultiSelectFilter'
 
 interface GroupFilterSelectProps {
   groups: GroupOut[]
@@ -21,63 +15,33 @@ interface GroupFilterSelectProps {
  * chosen from a specific selection.
  */
 export function GroupFilterSelect({ groups, selected, onChange }: GroupFilterSelectProps) {
-  const allActive = selected.size === 0
-  const items = [
-    { label: 'All groups', value: ALL_GROUPS_KEY },
-    ...groups.map((group) => ({ label: group.name, value: String(group.id) })),
-    { label: 'Unassigned', value: UNASSIGNED_KEY },
-  ]
-  const value = allActive ? [ALL_GROUPS_KEY] : [...selected]
-
-  function handleChange(next: string[]) {
-    if (next.includes(ALL_GROUPS_KEY)) {
-      // "All" was already active and specific groups were added -> keep those.
-      // Otherwise the user picked "All" from a specific filter -> clear.
-      onChange(allActive ? new Set(next.filter((key) => key !== ALL_GROUPS_KEY)) : new Set())
-      return
-    }
-    onChange(new Set(next))
-  }
-
   const groupFor = (key: string) => groups.find((group) => String(group.id) === key)
 
-  function labelFor(key: string) {
-    if (key === UNASSIGNED_KEY) return 'Unassigned'
-    return groupFor(key)?.name ?? key
-  }
-
   return (
-    <Select multiple items={items} value={value} onValueChange={handleChange}>
-      <SelectTrigger id="group-filter" className="w-full" aria-label="Group">
-        <SelectValue>
-          {(value) => {
-            const keys = Array.isArray(value)
-              ? (value as string[])
-              : value
-                ? [String(value)]
-                : []
-            const specific = keys.filter((key) => key !== ALL_GROUPS_KEY)
-            if (specific.length === 0) return 'All groups'
-            if (specific.length === 1) {
-              const key = specific[0]
-              const group = groupFor(key)
-              if (group) return <GroupBadge name={group.name} color={group.color} />
-              return labelFor(key)
-            }
-            return `${specific.length} groups`
-          }}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        {items.map((item) => {
-          const group = groupFor(item.value)
-          return (
-            <SelectItem key={item.value} value={item.value}>
-              {group ? <GroupBadge name={group.name} color={group.color} /> : item.label}
-            </SelectItem>
-          )
-        })}
-      </SelectContent>
-    </Select>
+    <MultiSelectFilter
+      id="group-filter"
+      ariaLabel="Group"
+      allKey={ALL_GROUPS_KEY}
+      allLabel="All groups"
+      options={[
+        ...groups.map((group) => ({
+          label: group.name,
+          value: String(group.id),
+          content: <GroupBadge name={group.name} color={group.color} />,
+        })),
+        { label: 'Unassigned', value: UNASSIGNED_KEY },
+      ]}
+      selected={selected}
+      onChange={onChange}
+      summarize={(specific) => {
+        if (specific.length === 1) {
+          const key = specific[0]
+          const group = groupFor(key)
+          if (group) return <GroupBadge name={group.name} color={group.color} />
+          return key === UNASSIGNED_KEY ? 'Unassigned' : key
+        }
+        return `${specific.length} groups`
+      }}
+    />
   )
 }

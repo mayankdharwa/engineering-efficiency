@@ -10,7 +10,8 @@ import {
   fullCapacityPoints,
   pointsToManDays,
 } from './capacity'
-import { combineGroups, filterAdhocByDay, filterMembers, isAllGroups } from './groups'
+import { combineGroups, filterAdhocByDay, filterMembers } from './groups'
+import { isAllSelected } from './filterSelection'
 
 /** Headline totals shown on the dashboard cards (team or selected groups). */
 export interface DashboardHeadline {
@@ -80,7 +81,7 @@ export function buildDashboardView(
   const pointsPerDay = stats?.points_per_day ?? DEFAULT_POINTS_PER_DAY
   const workingDays = stats?.working_days ?? 0
   const groupSummary =
-    stats && !isAllGroups(selectedGroups)
+    stats && !isAllSelected(selectedGroups)
       ? combineGroups(
           stats.groups,
           selectedGroups,
