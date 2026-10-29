@@ -20,7 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api } from '../api'
-import { useConfigTeam } from '../hooks/useConfigTeam'
+import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { UNASSIGNED_KEY } from '../lib/groups'
 import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
@@ -34,7 +34,7 @@ import { TeamSelect } from './TeamSelect'
 /** Per-team member configuration: group assignment, capacity and planned leave. */
 export function TeamConfigurationPanel() {
   const queryClient = useQueryClient()
-  const { teamId } = useConfigTeam()
+  const { teamId } = useSelectedTeam()
 
   const scope: Scope | null = teamId === null ? null : { teamId }
   const cycleQuery = useQuery({

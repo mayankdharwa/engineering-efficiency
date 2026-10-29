@@ -1,10 +1,6 @@
 import { isCompletedState, LinearStateType } from './issueState.ts'
-
-export interface PersonLoadIssue {
-  assigneeName: string | null
-  stateType: string | null
-  estimate: number | null
-}
+import type { IssueLite } from './issue.ts'
+import { projectStateKey } from './projectState.ts'
 
 export interface PersonLoadProjectInput {
   id: number
@@ -13,7 +9,7 @@ export interface PersonLoadProjectInput {
   state: string | null
   startDate: string | null
   targetDate: string | null
-  issues: readonly PersonLoadIssue[]
+  issues: readonly IssueLite[]
 }
 
 export type PersonLoadRole = 'now' | 'next' | 'available'
@@ -66,7 +62,7 @@ function normalizeName(name: string): string {
 }
 
 function isSkippedProject(state: string | null): boolean {
-  const key = (state ?? '').trim().toLowerCase()
+  const key = projectStateKey(state)
   return key === 'canceled' || key === 'completed'
 }
 

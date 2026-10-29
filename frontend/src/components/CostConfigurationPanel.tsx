@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
-import { useConfigTeam } from '../hooks/useConfigTeam'
+import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { notifyError, notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import { requireTeamId } from '../lib/scope'
@@ -30,7 +30,7 @@ const CURRENCIES = [
 /** Per-team cost configuration: currency symbol and man-day cost. */
 export function CostConfigurationPanel() {
   const queryClient = useQueryClient()
-  const { teamId } = useConfigTeam()
+  const { teamId } = useSelectedTeam()
 
   const [currency, setCurrency] = useState('$')
   const [manDayCost, setManDayCost] = useState('0')

@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { useTimezone } from '../hooks/useAppSettings'
-import { useConfigTeam } from '../hooks/useConfigTeam'
+import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { formatCycle } from '../lib/format'
 import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
@@ -31,7 +31,7 @@ import { TeamSelect } from './TeamSelect'
 export function CycleConfigurationPanel() {
   const queryClient = useQueryClient()
   const timezone = useTimezone()
-  const { teamId } = useConfigTeam()
+  const { teamId } = useSelectedTeam()
 
   const cyclesQuery = useQuery({
     queryKey: queryKeys.cycles(teamId),

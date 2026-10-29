@@ -512,7 +512,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
       ) : (
         <Chart
           definition={definition}
-          height={chartHeight(orderCount(stops), { perRow: 36, padding: 56 })}
+          height={chartHeight(distinctProjectCount(stops), { perRow: 36, padding: 56 })}
           ariaLabel="Due date trajectory"
           renderTooltipBody={({ points }) => (
             <TrajectoryTooltip points={points} timeZone={timeZone} />
@@ -523,7 +523,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
   )
 }
 
-function orderCount(stops: DateStop[]): number {
+function distinctProjectCount(stops: DateStop[]): number {
   const keys = new Set(stops.map((stop) => stop.key))
   return keys.size
 }

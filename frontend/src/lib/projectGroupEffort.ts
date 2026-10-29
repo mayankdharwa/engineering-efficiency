@@ -1,16 +1,10 @@
 import { workingDaysForPoints } from './projectSchedule.ts'
+import { LinearStateType } from './issueState.ts'
+import type { IssueLite } from './issue.ts'
 
 /** Issues with no assignee, or an assignee who is not in a known group. */
 export const UNASSIGNED_GROUP_KEY = 'unassigned'
 export const UNASSIGNED_GROUP_LABEL = 'Unassigned'
-
-import { LinearStateType } from './issueState.ts'
-
-export interface GroupEffortIssue {
-  assigneeName: string | null
-  stateType: string | null
-  estimate: number | null
-}
 
 export interface GroupEffortMember {
   name: string
@@ -52,7 +46,7 @@ function isCanceled(stateType: string | null): boolean {
  * totals. Days are points ÷ 2. Named groups are alphabetical; unassigned is last.
  */
 export function projectGroupEffort(
-  issues: readonly GroupEffortIssue[],
+  issues: readonly IssueLite[],
   members: readonly GroupEffortMember[],
   groups: readonly GroupEffortGroup[],
 ): GroupEffortSlice[] {

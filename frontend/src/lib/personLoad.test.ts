@@ -3,9 +3,9 @@ import { describe, it } from 'node:test'
 import {
   buildPersonLoad,
   type CountedPerson,
-  type PersonLoadIssue,
   type PersonLoadProjectInput,
 } from './personLoad.ts'
+import type { IssueLite } from './issue.ts'
 
 function counted(...names: string[]): CountedPerson[] {
   return names.map((name) => ({ name }))
@@ -15,14 +15,14 @@ function issue(
   assigneeName: string | null,
   stateType: string | null,
   estimate: number | null,
-): PersonLoadIssue {
+): IssueLite {
   return { assigneeName, stateType, estimate }
 }
 
 function project(
   id: number,
   name: string,
-  issues: PersonLoadIssue[],
+  issues: IssueLite[],
   extras: Partial<PersonLoadProjectInput> = {},
 ): PersonLoadProjectInput {
   return {

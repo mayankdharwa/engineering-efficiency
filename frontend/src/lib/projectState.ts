@@ -1,6 +1,6 @@
-import type { FilterSelection } from './filterSelection'
-import { isAllSelected } from './filterSelection'
-import type { ProjectOut } from '../types'
+import type { FilterSelection } from './filterSelection.ts'
+import { isAllSelected } from './filterSelection.ts'
+import type { ProjectOut } from '../types.ts'
 
 /** Sentinel value for the "All states" option in the filter select. */
 export const ALL_PROJECT_STATES_KEY = '__all__'

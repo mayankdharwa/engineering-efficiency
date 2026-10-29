@@ -42,7 +42,8 @@ export function selectGroups(
   return groups.filter((group) => selected.has(groupKey(group.group_id)))
 }
 
-export interface GroupSummary {
+/** Shared ratio and point totals for the group summary and dashboard headline. */
+export interface MetricTotals {
   planning: number | null
   velocity: number | null
   bandwidth: number | null
@@ -52,6 +53,9 @@ export interface GroupSummary {
   capacity: number
   adhoc: number
   unestimated: number
+}
+
+export interface GroupSummary extends MetricTotals {
   trend: VelocityTrendPointOut[]
 }
 

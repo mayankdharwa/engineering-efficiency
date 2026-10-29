@@ -10,21 +10,11 @@ import {
   fullCapacityPoints,
   pointsToManDays,
 } from './capacity'
-import { combineGroups, filterAdhocByDay, filterMembers } from './groups'
+import { combineGroups, filterAdhocByDay, filterMembers, type MetricTotals } from './groups'
 import { isAllSelected } from './filterSelection'
 
 /** Headline totals shown on the dashboard cards (team or selected groups). */
-export interface DashboardHeadline {
-  planning: number | null
-  velocity: number | null
-  bandwidth: number | null
-  planned: number
-  taken: number
-  done: number
-  capacity: number
-  adhoc: number
-  unestimated: number
-}
+export type DashboardHeadline = MetricTotals
 
 export interface DashboardCosts {
   manDayCost: number
@@ -92,21 +82,8 @@ export function buildDashboardView(
         )
       : null
 
-  const summary: DashboardHeadline = groupSummary
-    ? {
-        planning: groupSummary.planning,
-        velocity: groupSummary.velocity,
-        bandwidth: groupSummary.bandwidth,
-        planned: groupSummary.planned,
-        taken: groupSummary.taken,
-        done: groupSummary.done,
-        capacity: groupSummary.capacity,
-        adhoc: groupSummary.adhoc,
-        unestimated: groupSummary.unestimated,
-      }
-    : stats
-      ? headlineFromStats(stats)
-      : emptyHeadline()
+  const summary: DashboardHeadline =
+    groupSummary ?? (stats ? headlineFromStats(stats) : emptyHeadline())
 
   const manDayCost = stats?.man_day_cost ?? 0
   const currency = stats?.currency ?? '$'

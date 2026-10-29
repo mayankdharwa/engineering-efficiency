@@ -6,6 +6,7 @@ import { Fragment, useMemo } from 'react'
 import { chartHeight, CHART_SERIES_COLORS, TOOLTIP_MAX_WIDTH_STYLE, truncateLabel } from '../lib/chart'
 import { parseHexColor } from '../lib/color'
 import { dayUnit, formatCalendarDate, formatPoints } from '../lib/format'
+import { toIssueLite } from '../lib/issue'
 import {
   compareGroupEffort,
   projectGroupEffort,
@@ -116,11 +117,7 @@ function comparisonFor(
   const calendarDays = workingDaysThrough(project.start_date, project.target_date)
   if (calendarDays === null) return null
   const slices = projectGroupEffort(
-    project.issues.map((issue) => ({
-      assigneeName: issue.assignee_name,
-      stateType: issue.state_type,
-      estimate: issue.estimate,
-    })),
+    project.issues.map(toIssueLite),
     members,
     groups,
   )

@@ -11,7 +11,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
-import { useConfigTeam } from '../hooks/useConfigTeam'
+import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { isHexColor, parseHexColor } from '../lib/color'
 import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
@@ -77,7 +77,7 @@ function ColorField({
 /** Add, rename, recolour and delete a team's member groups. */
 export function GroupsPanel() {
   const queryClient = useQueryClient()
-  const { teamId } = useConfigTeam()
+  const { teamId } = useSelectedTeam()
 
   const groupsQuery = useQuery({
     queryKey: queryKeys.groups(teamId),

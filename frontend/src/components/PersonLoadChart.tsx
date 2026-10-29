@@ -6,6 +6,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { formatPoints } from '../lib/format'
+import { toIssueLite } from '../lib/issue'
 import { buildPersonLoad, type CountedPerson, type PersonLoadBar } from '../lib/personLoad'
 import type { ProjectOut } from '../types'
 import { GroupBadge } from './GroupBadge'
@@ -101,11 +102,7 @@ export function PersonLoadChart({
           state: project.state,
           startDate: project.start_date,
           targetDate: project.target_date,
-          issues: project.issues.map((issue) => ({
-            assigneeName: issue.assignee_name,
-            stateType: issue.state_type,
-            estimate: issue.estimate,
-          })),
+          issues: project.issues.map(toIssueLite),
         })),
         countedPeople,
       ),
