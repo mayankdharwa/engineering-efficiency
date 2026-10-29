@@ -17,3 +17,13 @@ export function truncateLabel(value: string, max: number): string {
 export const TOOLTIP_MAX_WIDTH_STYLE = {
   ['--ts-chart-tooltip-max-width' as string]: '20rem',
 } as CSSProperties
+
+/** Shared first series fills, used by the multi-series charts. */
+export const CHART_SERIES_COLORS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--primary)',
+] as const

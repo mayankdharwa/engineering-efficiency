@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { useTimezone } from '../hooks/useAppSettings'
 import { chartHeight, truncateLabel } from '../lib/chart'
-import { formatCalendarDate, formatDateTime, formatUtcDay } from '../lib/format'
+import { dayUnit, formatCalendarDate, formatDateTime, formatUtcDay } from '../lib/format'
 import { isProjectCompleted } from '../lib/projectState'
 import { isoDateInTimeZone, isoDateToUtcMs, MS_PER_DAY } from '../lib/timezone'
 import type { ProjectDueDateChangeOut, ProjectOut } from '../types'
@@ -69,14 +69,13 @@ function movementLabel(start: number, end: number): string {
   const days = Math.round((end - start) / MS_PER_DAY)
   if (days === 0) return 'Unchanged'
   const count = Math.abs(days)
-  const unit = count === 1 ? 'day' : 'days'
-  return days > 0 ? `${count} ${unit} later` : `${count} ${unit} earlier`
+  return days > 0 ? `${count} ${dayUnit(count)} later` : `${count} ${dayUnit(count)} earlier`
 }
 
 function spanLabel(start: number, end: number): string {
   const count = Math.abs(Math.round((end - start) / MS_PER_DAY))
   if (count === 0) return 'Same day'
-  return count === 1 ? '1 day' : `${count} days`
+  return `${count} ${dayUnit(count)}`
 }
 
 /** Latest due date the chart marks with D, falling back to the stored target date. */

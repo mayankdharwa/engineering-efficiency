@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/tooltip'
 import { useTimezone } from '../hooks/useAppSettings'
 import { DEFAULT_POINTS_PER_DAY } from '../lib/capacity'
-import { formatCalendarDate, formatPercent, formatPoints } from '../lib/format'
+import { dayUnit, formatCalendarDate, formatPercent, formatPoints } from '../lib/format'
 import { calendarDaysLate, parseIsoDate, weekdaysUntil } from '../lib/timezone'
 import { badgeVariantForState } from '../lib/issueState'
 import {
@@ -165,7 +165,7 @@ function ProjectDueDateCell({
           delay={200}
           className={`${chipClass} bg-red-800 text-white dark:bg-red-900 dark:text-red-50`}
         >
-          {daysLate} {daysLate === 1 ? 'day' : 'days'} late
+          {daysLate} {dayUnit(daysLate)} late
         </TooltipTrigger>
         <TooltipContent>{formattedDate}</TooltipContent>
       </Tooltip>

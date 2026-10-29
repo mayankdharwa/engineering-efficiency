@@ -3,9 +3,9 @@ import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
 import { tooltip } from '@tanstack/charts/tooltip'
 import { Fragment, useMemo } from 'react'
-import { chartHeight, TOOLTIP_MAX_WIDTH_STYLE, truncateLabel } from '../lib/chart'
+import { chartHeight, CHART_SERIES_COLORS, TOOLTIP_MAX_WIDTH_STYLE, truncateLabel } from '../lib/chart'
 import { parseHexColor } from '../lib/color'
-import { formatCalendarDate, formatPoints } from '../lib/format'
+import { dayUnit, formatCalendarDate, formatPoints } from '../lib/format'
 import {
   compareGroupEffort,
   projectGroupEffort,
@@ -35,14 +35,6 @@ const DELTA_GAP = 8
 const TICK_GAP = 6
 /** Pixel width reserved for the check glyph. */
 const CHECK_WIDTH = 14
-const FALLBACK_COLORS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-  'var(--primary)',
-]
 const NAME_MAX = 28
 
 interface SpanComparison {
@@ -84,10 +76,10 @@ function leftMarginFor(labels: readonly string[]): number {
   return Math.ceil(widest + 24)
 }
 
-function estimatedLabelWidth(text: string): number {
+function estimatedLabelWidth(label: string): number {
   const fontSize = 11
   let em = 0
-  for (const character of text) {
+  for (const character of label) {
     if (/\s/u.test(character)) em += 0.4
     else if (/[mwMW@#%&]/u.test(character)) em += 1.05
     else if (/[A-Z]/u.test(character)) em += 0.78
@@ -98,15 +90,13 @@ function estimatedLabelWidth(text: string): number {
 }
 
 function formatDayCount(days: number): string {
-  const unit = Math.abs(days) === 1 ? 'day' : 'days'
-  return `${formatPoints(days)} ${unit}`
+  return `${formatPoints(days)} ${dayUnit(days)}`
 }
 
 /** Absolute gap between duration and man days, such as `2 days` or `0.5 days`. */
 function formatDeltaDays(days: number): string {
-  const magnitude = formatPoints(Math.abs(days))
-  const unit = magnitude === '1' ? 'day' : 'days'
-  return `${magnitude} ${unit}`
+  const magnitude = Math.abs(days)
+  return `${formatPoints(magnitude)} ${dayUnit(magnitude)}`
 }
 
 function deltaDays(comparison: SpanComparison): number {
@@ -176,7 +166,7 @@ function legendFor(comparisons: readonly SpanComparison[]): LegendEntry[] {
       slice.key === UNASSIGNED_GROUP_KEY
         ? COLOR_UNASSIGNED
         : (hex ??
-          FALLBACK_COLORS[fallback++ % FALLBACK_COLORS.length] ??
+          CHART_SERIES_COLORS[fallback++ % CHART_SERIES_COLORS.length] ??
           COLOR_UNASSIGNED)
     return { key: slice.key, series, color }
   })

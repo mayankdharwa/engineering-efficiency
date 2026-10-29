@@ -11,17 +11,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { CHART_SERIES_COLORS } from '../lib/chart'
 import { formatCalendarDate, formatPercent, formatPoints } from '../lib/format'
 import type { AdhocByDayPointOut } from '../types'
 
 /** Distinct fills so many assignees stay separable; cycles if the roster is larger. */
 const ASSIGNEE_COLORS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-  'var(--primary)',
+  ...CHART_SERIES_COLORS,
   'oklch(0.62 0.14 230)',
   'oklch(0.58 0.13 160)',
   'oklch(0.60 0.14 330)',

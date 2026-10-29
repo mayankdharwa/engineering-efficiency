@@ -81,6 +81,11 @@ export function formatPoints(value: number | null | undefined): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
 
+/** "day" or "days" for a whole-day count (an absolute value of 1 is singular). */
+export function dayUnit(count: number): string {
+  return Math.abs(count) === 1 ? 'day' : 'days'
+}
+
 /** Format a monetary amount with a currency symbol (e.g. "€1,200" or "$112.5"). */
 export function formatMoney(
   value: number | null | undefined,
