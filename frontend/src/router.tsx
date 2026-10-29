@@ -2,26 +2,16 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   redirect,
   retainSearchParams,
 } from '@tanstack/react-router'
 import { Toaster } from '@/components/ui/toast'
 import { Layout } from './components/Layout'
-import { AppUsersPanel } from './components/AppUsersPanel'
-import { CycleConfigurationPanel } from './components/CycleConfigurationPanel'
-import { DataTransferPanel } from './components/DataTransferPanel'
-import { GroupsPanel } from './components/GroupsPanel'
-import { LinearSetupPanel } from './components/LinearSetupPanel'
-import { TeamConfigurationPanel } from './components/TeamConfigurationPanel'
-import { TimeConfigurationPanel } from './components/TimeConfigurationPanel'
 import { api } from './api'
 import { SelectedTeamProvider } from './hooks/useSelectedTeam'
 import { parseTeamSearch } from './lib/teamSearch'
-import { ConfigLayout } from './pages/ConfigLayout'
-import { DashboardPage } from './pages/DashboardPage'
-import { LoginPage } from './pages/LoginPage'
-import { ProjectsPage } from './pages/ProjectsPage'
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -41,7 +31,7 @@ const loginRoute = createRoute({
       throw redirect({ to: '/cycles', replace: true })
     }
   },
-  component: LoginPage,
+  component: lazyRouteComponent(() => import('./pages/LoginPage'), 'LoginPage'),
 })
 
 const appRoute = createRoute({
@@ -77,13 +67,13 @@ const indexRoute = createRoute({
 const cyclesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/cycles',
-  component: DashboardPage,
+  component: lazyRouteComponent(() => import('./pages/DashboardPage'), 'DashboardPage'),
 })
 
 const projectsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects',
-  component: ProjectsPage,
+  component: lazyRouteComponent(() => import('./pages/ProjectsPage'), 'ProjectsPage'),
 })
 
 const configRoute = createRoute({
@@ -95,7 +85,7 @@ const configRoute = createRoute({
       throw redirect({ to: '/cycles', search, replace: true })
     }
   },
-  component: ConfigLayout,
+  component: lazyRouteComponent(() => import('./pages/ConfigLayout'), 'ConfigLayout'),
 })
 
 const configIndexRoute = createRoute({
@@ -109,43 +99,52 @@ const configIndexRoute = createRoute({
 const linearRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/linear',
-  component: LinearSetupPanel,
+  component: lazyRouteComponent(() => import('./components/LinearSetupPanel'), 'LinearSetupPanel'),
 })
 
 const timeRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/time',
-  component: TimeConfigurationPanel,
+  component: lazyRouteComponent(
+    () => import('./components/TimeConfigurationPanel'),
+    'TimeConfigurationPanel',
+  ),
 })
 
 const cycleRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/cycle',
-  component: CycleConfigurationPanel,
+  component: lazyRouteComponent(
+    () => import('./components/CycleConfigurationPanel'),
+    'CycleConfigurationPanel',
+  ),
 })
 
 const groupsRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/groups',
-  component: GroupsPanel,
+  component: lazyRouteComponent(() => import('./components/GroupsPanel'), 'GroupsPanel'),
 })
 
 const teamRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/team',
-  component: TeamConfigurationPanel,
+  component: lazyRouteComponent(
+    () => import('./components/TeamConfigurationPanel'),
+    'TeamConfigurationPanel',
+  ),
 })
 
 const dataRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/data',
-  component: DataTransferPanel,
+  component: lazyRouteComponent(() => import('./components/DataTransferPanel'), 'DataTransferPanel'),
 })
 
 const usersRoute = createRoute({
   getParentRoute: () => configRoute,
   path: '/users',
-  component: AppUsersPanel,
+  component: lazyRouteComponent(() => import('./components/AppUsersPanel'), 'AppUsersPanel'),
 })
 
 const routeTree = rootRoute.addChildren([
