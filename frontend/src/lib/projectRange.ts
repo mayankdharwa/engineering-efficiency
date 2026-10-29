@@ -9,7 +9,3 @@ export const PROJECT_RANGE_OPTIONS = [
 export type ProjectRangeMonths = (typeof PROJECT_RANGE_OPTIONS)[number]['value']
 
 export const DEFAULT_PROJECT_RANGE_MONTHS: ProjectRangeMonths = 1
-
-export function isProjectRangeMonths(value: number): value is ProjectRangeMonths {
-  return PROJECT_RANGE_OPTIONS.some((option) => option.value === value)
-}

@@ -11,18 +11,12 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { notifyError, notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
+import { OptionSelect } from './OptionSelect'
 import { QueryPanelBody } from './QueryPanelBody'
 
 /** Currency symbols the app can display, with their names for the dropdown. */
@@ -62,7 +56,6 @@ export function CostConfigurationPanel() {
       setManDayCost(String(data.man_day_cost))
       if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   function handleSave() {
@@ -98,22 +91,14 @@ export function CostConfigurationPanel() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="cost-currency">Currency</Label>
-              <Select
+              <OptionSelect
                 items={CURRENCIES}
                 value={currency}
-                onValueChange={(value) => setCurrency(value as string)}
-              >
-                <SelectTrigger id="cost-currency" className="w-full max-w-md">
-                  <SelectValue placeholder="Select a currency" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onValueChange={setCurrency}
+                id="cost-currency"
+                className="w-full max-w-md"
+                placeholder="Select a currency"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="cost-man-day">Man Day Cost</Label>

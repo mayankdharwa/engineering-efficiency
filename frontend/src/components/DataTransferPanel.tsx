@@ -1,15 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -22,7 +12,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '../api'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
+import { ConfirmDialog } from './ConfirmDialog'
 
 function formatCounts(result: {
   teams: number
@@ -51,7 +42,6 @@ export function DataTransferPanel() {
     mutationFn: api.downloadExport,
     onSuccess: () =>
       notifySuccess('Export downloaded.'),
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const importMutation = useMutation({
@@ -62,7 +52,6 @@ export function DataTransferPanel() {
       setFileInputKey((key) => key + 1)
       void queryClient.invalidateQueries()
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   return (
@@ -115,29 +104,16 @@ export function DataTransferPanel() {
         </CardFooter>
       </Card>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Replace local data with this file?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This replaces local teams, cycles, issues, groups, costs, and time
-              settings. It cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                setConfirmOpen(false)
-                if (file) importMutation.mutate(file)
-              }}
-            >
-              Import and replace
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Replace local data with this file?"
+        description="This replaces local teams, cycles, issues, groups, costs, and time settings. It cannot be undone."
+        confirmLabel="Import and replace"
+        onConfirm={() => {
+          if (file) importMutation.mutate(file)
+        }}
+      />
     </div>
   )
 }

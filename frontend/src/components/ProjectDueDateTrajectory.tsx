@@ -8,19 +8,13 @@ import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useTimezone } from '../hooks/useAppSettings'
 import { chartHeight, truncateLabel } from '../lib/chart'
 import { formatCalendarDate, formatDateTime } from '../lib/format'
-import { projectStateKey } from '../lib/projectState'
+import { isProjectCompleted } from '../lib/projectState'
 import { isoDateInTimeZone } from '../lib/timezone'
 import type { ProjectDueDateChangeOut, ProjectOut } from '../types'
+import { OptionSelect } from './OptionSelect'
 
 type TrajectorySortKey = 'name' | 'start' | 'due'
 type TrajectorySortDirection = 'asc' | 'desc'
@@ -234,7 +228,7 @@ function trajectoryFor(
 
   const current = stops.find((stop) => stop.role === 'current')
   const checks: DateStop[] =
-    current && projectStateKey(project.state) === 'completed'
+    current && isProjectCompleted(project.state)
       ? [{ ...current, role: 'check', step: 'Completed' }]
       : []
 
@@ -309,24 +303,14 @@ function TrajectorySortControls({
         Sort
       </Label>
       <div className="w-48">
-        <Select
+        <OptionSelect
           items={SORT_OPTIONS}
           value={sortKey}
-          onValueChange={(next) => {
-            if (next === 'name' || next === 'start' || next === 'due') onSortKeyChange(next)
-          }}
-        >
-          <SelectTrigger id="trajectory-sort" className="w-full" aria-label="Sort by">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onValueChange={onSortKeyChange}
+          id="trajectory-sort"
+          className="w-full"
+          aria-label="Sort by"
+        />
       </div>
       <Button
         type="button"

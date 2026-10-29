@@ -1,4 +1,4 @@
-import { projectStateKey } from './projectState'
+import { isProjectCompleted } from './projectState'
 
 export const PROJECT_HEALTH = {
   on_track: 'On Track',
@@ -21,7 +21,7 @@ export function projectHealthSortRank(project: {
   health: string | null
   state: string | null
 }): number {
-  if (projectStateKey(project.state) === 'completed') return 3
+  if (isProjectCompleted(project.state)) return 3
   switch (project.health) {
     case 'ahead':
       return 0

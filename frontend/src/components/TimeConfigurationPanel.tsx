@@ -10,18 +10,12 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { useAppSettings } from '../hooks/useAppSettings'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
 import { APP_SETTINGS_QUERY_KEY, queryKeys } from '../lib/queryKeys'
+import { OptionSelect } from './OptionSelect'
 
 /** Format a 0-23 hour as a localized time label (e.g. "7:00 PM"). */
 function formatHour(hour: number): string {
@@ -67,7 +61,6 @@ export function TimeConfigurationPanel() {
       queryClient.invalidateQueries({ queryKey: APP_SETTINGS_QUERY_KEY })
       queryClient.invalidateQueries({ queryKey: queryKeys.allStats })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   return (
@@ -90,44 +83,27 @@ export function TimeConfigurationPanel() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="metrics-timezone">Working timezone</Label>
-              <Select
+              <OptionSelect
                 items={zones.map((zone) => ({ label: zone, value: zone }))}
                 value={timezone}
-                onValueChange={(value) => setTimezone(value as string)}
-              >
-                <SelectTrigger id="metrics-timezone" className="w-full max-w-md">
-                  <SelectValue placeholder="Select a timezone" />
-                </SelectTrigger>
-                <SelectContent>
-                  {zones.map((zone) => (
-                    <SelectItem key={zone} value={zone}>
-                      {zone}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onValueChange={setTimezone}
+                id="metrics-timezone"
+                className="w-full max-w-md"
+                placeholder="Select a timezone"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="metrics-cutoff">Day counts as elapsed after</Label>
-              <Select
+              <OptionSelect
                 items={hours.map((hour) => ({
                   label: formatHour(hour),
                   value: hour,
                 }))}
                 value={cutoffHour}
-                onValueChange={(value) => setCutoffHour(value as number)}
-              >
-                <SelectTrigger id="metrics-cutoff" className="w-full max-w-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {hours.map((hour) => (
-                    <SelectItem key={hour} value={hour}>
-                      {formatHour(hour)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onValueChange={setCutoffHour}
+                id="metrics-cutoff"
+                className="w-full max-w-xs"
+              />
             </div>
           </div>
         )}

@@ -28,6 +28,11 @@ export function projectStateKey(state: string | null | undefined): string {
   return state.trim().toLowerCase()
 }
 
+/** A project is completed when its Linear state is 'completed'. */
+export function isProjectCompleted(state: string | null | undefined): boolean {
+  return projectStateKey(state) === 'completed'
+}
+
 export function projectFilterKey(project: ProjectOut): string {
   if (project.excluded) return EXCLUDED_PROJECT_STATE
   return projectStateKey(project.state)

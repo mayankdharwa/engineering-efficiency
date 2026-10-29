@@ -1,11 +1,5 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import type { TeamOut } from '../types'
+import { OptionSelect } from './OptionSelect'
 
 /** Presentational team Select with `name (key)` labels. */
 export function TeamPicker({
@@ -24,24 +18,17 @@ export function TeamPicker({
   placeholder?: string
 }) {
   return (
-    <Select
+    <OptionSelect
       items={teams.map((team) => ({
         label: `${team.name} (${team.key})`,
         value: team.id,
       }))}
       value={value}
-      onValueChange={(next) => onChange(next as number | null)}
-    >
-      <SelectTrigger id={id} className="w-full" aria-label={ariaLabel}>
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {teams.map((team) => (
-          <SelectItem key={team.id} value={team.id}>
-            {team.name} ({team.key})
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      onValueChange={onChange}
+      id={id}
+      className="w-full"
+      aria-label={ariaLabel}
+      placeholder={placeholder}
+    />
   )
 }

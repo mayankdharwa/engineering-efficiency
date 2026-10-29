@@ -10,13 +10,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -29,10 +22,11 @@ import {
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { UNASSIGNED_KEY } from '../lib/groups'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import type { CycleSettingsIn, GroupOut } from '../types'
 import { CostConfigurationPanel } from './CostConfigurationPanel'
+import { OptionSelect } from './OptionSelect'
 import { QueryPanelBody } from './QueryPanelBody'
 import { TeamSelect } from './TeamSelect'
 
@@ -75,7 +69,6 @@ export function TeamConfigurationPanel() {
       notifySuccess('Team configuration saved.')
       if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const cycle = cycleQuery.data
@@ -169,32 +162,20 @@ export function TeamConfigurationPanel() {
                             {member.email ?? '—'}
                           </TableCell>
                           <TableCell>
-                            <Select
+                            <OptionSelect
                               items={groupItems}
                               value={assignments[member.linear_id] ?? UNASSIGNED_KEY}
                               disabled={snapshotLocked}
                               onValueChange={(value) =>
                                 setAssignments((prev) => ({
                                   ...prev,
-                                  [member.linear_id]: value as string,
+                                  [member.linear_id]: value,
                                 }))
                               }
-                            >
-                              <SelectTrigger
-                                size="sm"
-                                className="w-full"
-                                aria-label={`Group for ${member.name}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {groupItems.map((item) => (
-                                  <SelectItem key={item.value} value={item.value}>
-                                    {item.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              size="sm"
+                              className="w-full"
+                              aria-label={`Group for ${member.name}`}
+                            />
                           </TableCell>
                           <TableCell>
                             <Checkbox
@@ -210,7 +191,7 @@ export function TeamConfigurationPanel() {
                             />
                           </TableCell>
                           <TableCell>
-                            <Select
+                            <OptionSelect
                               items={dayItems}
                               value={String(unavailable)}
                               disabled={!counted || snapshotLocked}
@@ -220,22 +201,10 @@ export function TeamConfigurationPanel() {
                                   [member.linear_id]: Number(value),
                                 }))
                               }
-                            >
-                              <SelectTrigger
-                                size="sm"
-                                className="w-24"
-                                aria-label={`Unavailable days for ${member.name}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {dayItems.map((item) => (
-                                  <SelectItem key={item.value} value={item.value}>
-                                    {item.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              size="sm"
+                              className="w-24"
+                              aria-label={`Unavailable days for ${member.name}`}
+                            />
                           </TableCell>
                         </TableRow>
                       )

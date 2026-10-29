@@ -1,19 +1,10 @@
 import { createColumnHelper } from '@tanstack/react-table'
 import { useMemo, useState } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { formatRelative } from '../lib/format'
 import { appTableFeatures } from '../lib/table'
 import type { TeamOut } from '../types'
+import { ConfirmDialog } from './ConfirmDialog'
 import { DataTable, type AppColumnDef } from './DataTable'
 
 const helper = createColumnHelper<typeof appTableFeatures, TeamOut>()
@@ -94,34 +85,22 @@ export function TeamsTable({
         emptyMessage="Import teams above."
       />
 
-      <AlertDialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null)
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes <strong>{pendingDelete?.name}</strong> and its data from this app.
-              Linear is not changed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                if (pendingDelete) onDelete(pendingDelete.id)
-                setPendingDelete(null)
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={<>Delete {pendingDelete?.name}?</>}
+        description={
+          <>
+            This removes <strong>{pendingDelete?.name}</strong> and its data from this app.
+            Linear is not changed.
+          </>
+        }
+        onConfirm={() => {
+          if (pendingDelete) onDelete(pendingDelete.id)
+        }}
+      />
     </>
   )
 }

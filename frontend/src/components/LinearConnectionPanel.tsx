@@ -34,14 +34,12 @@ export function LinearConnectionPanel() {
       )
       queryClient.invalidateQueries({ queryKey: queryKeys.config })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const testMutation = useMutation({
     mutationFn: api.testConnection,
     onSuccess: (result) =>
       result.ok ? notifySuccess(result.message) : notifyError(result.message),
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const config = configQuery.data

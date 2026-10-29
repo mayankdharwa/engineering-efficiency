@@ -1,15 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -26,11 +16,12 @@ import { api } from '../api'
 import { useTimezone } from '../hooks/useAppSettings'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { formatCycle } from '../lib/format'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import { useSelectedCycleId } from '../lib/selection'
 import { isoDateInTimeZone, zonedDateToUtcIso } from '../lib/timezone'
 import type { CycleSettingsIn } from '../types'
+import { ConfirmDialog } from './ConfirmDialog'
 import { CycleSelect } from './CycleSelect'
 import { QueryPanelBody } from './QueryPanelBody'
 import { TeamSelect } from './TeamSelect'
@@ -75,7 +66,6 @@ export function CycleConfigurationPanel() {
       notifySuccess('Cycle configuration saved.')
       if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const cycle = cycleQuery.data
@@ -86,7 +76,6 @@ export function CycleConfigurationPanel() {
       notifySuccess('Cycle finalized.')
       if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   function handleSave() {
@@ -230,28 +219,14 @@ export function CycleConfigurationPanel() {
         </CardContent>
       </Card>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Finalize this team&apos;s cycle?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The cycle is kept. Refresh to load the next one.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                setConfirmOpen(false)
-                finalizeMutation.mutate()
-              }}
-            >
-              Finalize cycle
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Finalize this team's cycle?"
+        description="The cycle is kept. Refresh to load the next one."
+        confirmLabel="Finalize cycle"
+        onConfirm={() => finalizeMutation.mutate()}
+      />
     </div>
   )
 }

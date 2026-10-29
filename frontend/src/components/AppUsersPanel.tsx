@@ -1,15 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,13 +11,6 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -38,9 +21,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api } from '../api'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
 import { queryKeys } from '../lib/queryKeys'
 import type { UserOut, UserRole } from '../types'
+import { ConfirmDialog } from './ConfirmDialog'
+import { OptionSelect } from './OptionSelect'
 import { QueryPanelBody } from './QueryPanelBody'
 
 const ROLES: { value: UserRole; label: string }[] = [
@@ -77,7 +62,6 @@ export function AppUsersPanel() {
       setRole('reader')
       queryClient.invalidateQueries({ queryKey: queryKeys.users })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const updateMutation = useMutation({
@@ -88,7 +72,6 @@ export function AppUsersPanel() {
       queryClient.invalidateQueries({ queryKey: queryKeys.users })
       queryClient.invalidateQueries({ queryKey: queryKeys.auth })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const deleteMutation = useMutation({
@@ -99,7 +82,6 @@ export function AppUsersPanel() {
       setPendingDelete(null)
       queryClient.invalidateQueries({ queryKey: queryKeys.users })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const onCreate = (event: FormEvent) => {
@@ -147,22 +129,13 @@ export function AppUsersPanel() {
           </div>
           <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor="new-user-role">Role</Label>
-            <Select
+            <OptionSelect
               items={ROLES}
               value={role}
-              onValueChange={(value) => setRole(value as UserRole)}
-            >
-              <SelectTrigger id="new-user-role" className="h-9 !w-full min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onValueChange={setRole}
+              id="new-user-role"
+              className="h-9 !w-full min-w-0"
+            />
           </div>
           <Button type="submit" className="h-9" disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Adding…' : 'Add user'}
@@ -198,31 +171,16 @@ export function AppUsersPanel() {
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Select
+                      <OptionSelect
                         items={ROLES}
                         value={user.role}
-                        onValueChange={(value) =>
-                          updateMutation.mutate({
-                            userId: user.id,
-                            nextRole: value as UserRole,
-                          })
+                        onValueChange={(nextRole) =>
+                          updateMutation.mutate({ userId: user.id, nextRole })
                         }
-                      >
-                        <SelectTrigger
-                          className="w-32"
-                          aria-label={`Role for ${user.username}`}
-                          disabled={updateMutation.isPending || lastAdmin}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ROLES.map((item) => (
-                            <SelectItem key={item.value} value={item.value}>
-                              {item.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        className="w-32"
+                        aria-label={`Role for ${user.username}`}
+                        disabled={updateMutation.isPending || lastAdmin}
+                      />
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
@@ -243,30 +201,15 @@ export function AppUsersPanel() {
         </QueryPanelBody>
       </CardContent>
 
-      <AlertDialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null)
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {pendingDelete?.username}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              They will no longer be able to sign in.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => pendingDelete && deleteMutation.mutate(pendingDelete.id)}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={<>Delete {pendingDelete?.username}?</>}
+        description="They will no longer be able to sign in."
+        onConfirm={() => pendingDelete && deleteMutation.mutate(pendingDelete.id)}
+      />
     </Card>
   )
 }

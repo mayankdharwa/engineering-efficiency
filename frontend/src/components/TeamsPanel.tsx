@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { api } from '../api'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import { TeamsTable } from './TeamsTable'
 
@@ -27,7 +27,6 @@ export function TeamsPanel() {
       notifySuccess(`Imported ${imported.length} team(s) from Linear.`)
       queryClient.invalidateQueries({ queryKey: queryKeys.teams })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const refreshMutation = useMutation({
@@ -36,7 +35,6 @@ export function TeamsPanel() {
       notifySuccess(result.message ?? `Synced ${result.issues_synced} issue(s).`)
       invalidateTeamData(queryClient, result.team_id)
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const handleRefresh = useCallback(
@@ -51,7 +49,6 @@ export function TeamsPanel() {
       notifySuccess(team ? `Deleted ${team.name}.` : 'Team deleted.')
       invalidateTeamData(queryClient, teamId, { remove: true })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const handleDelete = useCallback(

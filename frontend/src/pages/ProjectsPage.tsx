@@ -29,7 +29,7 @@ import { TeamPicker } from '../components/TeamPicker'
 import { useCanRefresh } from '../hooks/useAuth'
 import { useSelectedTeam } from '../hooks/useSelectedTeam'
 import { formatMoney, formatPoints, formatRelative } from '../lib/format'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
 import { DEFAULT_PROJECT_RANGE_MONTHS, type ProjectRangeMonths } from '../lib/projectRange'
 import { durationExceedsManDays } from '../lib/projectSchedule'
 import {
@@ -114,7 +114,6 @@ export function ProjectsPage() {
       notifySuccess(result.message ?? `Synced ${result.projects_synced} project(s).`)
       invalidateTeamData(queryClient, teamId)
     },
-    onError: (error: Error) => notifyError(error.message),
   })
   const excludeMutation = useMutation({
     mutationFn: ({
@@ -128,7 +127,6 @@ export function ProjectsPage() {
       notifySuccess(updated.excluded ? 'Project excluded.' : 'Project included.')
       queryClient.invalidateQueries({ queryKey: queryKeys.projects(teamId) })
     },
-    onError: (error: Error) => notifyError(error.message),
   })
   const syncProjectMutation = useMutation({
     mutationFn: ({ teamId, projectId }: { teamId: number; projectId: number }) =>
@@ -137,7 +135,6 @@ export function ProjectsPage() {
       notifySuccess(result.message ?? 'Project synced.')
       invalidateTeamData(queryClient, teamId)
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   useEffect(() => {

@@ -28,6 +28,7 @@ import {
 import {
   EXCLUDED_PROJECT_STATE,
   formatProjectState,
+  isProjectCompleted,
   projectStateKey,
 } from '../lib/projectState'
 import { appTableFeatures } from '../lib/table'
@@ -49,10 +50,6 @@ function isPointsComplete(done: number, total: number): boolean {
   const ratio = doneRatio(done, total)
   if (ratio === null) return false
   return Number((ratio * 100).toFixed(DONE_PERCENT_DIGITS)) === 100
-}
-
-function isCompletedState(state: string | null): boolean {
-  return projectStateKey(state) === 'completed'
 }
 
 function isStartedState(state: string | null): boolean {
@@ -94,7 +91,7 @@ function ProjectDoneCell({
   state: string | null
 }) {
   if (isPointsComplete(done, total)) {
-    if (isCompletedState(state)) {
+    if (isProjectCompleted(state)) {
       return (
         <span className={`inline-flex justify-center ${COMPLETE_TONE}`}>
           <CheckIcon className="size-4" aria-label="Complete" />
@@ -227,7 +224,7 @@ function ProjectHealthCell({
   workingDaysLeft: number | null
   state: string | null
 }) {
-  if (isCompletedState(state)) {
+  if (isProjectCompleted(state)) {
     return <span className="text-muted-foreground">—</span>
   }
   if (!health) {

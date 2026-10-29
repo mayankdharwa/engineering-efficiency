@@ -16,7 +16,7 @@ import {
   type GroupEffortSlice,
 } from '../lib/projectGroupEffort'
 import { workingDaysForPoints, workingDaysThrough } from '../lib/projectSchedule'
-import { projectStateKey } from '../lib/projectState'
+import { isProjectCompleted } from '../lib/projectState'
 import type { GroupOut, ProjectOut } from '../types'
 
 const SERIES_SPAN = 'Project Duration'
@@ -145,7 +145,7 @@ function comparisonFor(
     estimateDays: workingDaysForPoints(points),
     points,
     slices,
-    completed: projectStateKey(project.state) === 'completed',
+    completed: isProjectCompleted(project.state),
   }
 }
 

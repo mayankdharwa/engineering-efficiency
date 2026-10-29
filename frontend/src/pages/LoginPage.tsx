@@ -29,6 +29,8 @@ export function LoginPage() {
   const mutation = useMutation({
     mutationFn: ({ name, secret }: { name: string; secret: string }) =>
       setupRequired ? api.setupAccount(name, secret) : api.login(name, secret),
+    // The form renders the failure inline; don't also raise a toast.
+    meta: { suppressErrorToast: true },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth })
       await navigate({ to: '/cycles', replace: true })

@@ -13,7 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '../api'
 import { useConfigTeam } from '../hooks/useConfigTeam'
 import { isHexColor, parseHexColor } from '../lib/color'
-import { notifyError, notifySuccess } from '../lib/notify'
+import { notifySuccess } from '../lib/notify'
 import { invalidateTeamData, queryKeys } from '../lib/queryKeys'
 import type { GroupOut } from '../types'
 import { GroupBadge } from './GroupBadge'
@@ -112,7 +112,6 @@ export function GroupsPanel() {
       notifySuccess(`Added group '${group.name}'.`)
       invalidate()
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const updateGroup = useMutation({
@@ -122,7 +121,6 @@ export function GroupsPanel() {
       notifySuccess(`Updated group '${group.name}'.`)
       invalidate()
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   const deleteGroup = useMutation({
@@ -131,7 +129,6 @@ export function GroupsPanel() {
       notifySuccess('Group deleted.')
       invalidate()
     },
-    onError: (error: Error) => notifyError(error.message),
   })
 
   function patchDraft(id: number, patch: Partial<GroupDraft>) {
