@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.models import Cycle, CycleMembership, Issue, MemberGroup, Team, TeamMember
-from app.sync import CycleMismatchError, sync_team_issues, upsert_teams
+from app.sync import (
+    CycleMismatchError,
+    finalize_team_cycle,
+    sync_cycle_issues_only,
+    sync_team_issues,
+    upsert_teams,
+)
 
 
 class _FakeClient:
@@ -86,13 +92,31 @@ def test_upsert_teams_treats_missing_cycles_flag_as_enabled() -> None:
 class _FakeSyncClient:
     """Minimal stand-in for the calls ``sync_team_issues`` makes."""
 
-    def __init__(self, cycle: dict | None, issues: list[dict], members: list[dict]):
+    def __init__(
+        self,
+        cycle: dict | None,
+        issues: list[dict],
+        members: list[dict],
+        *,
+        cycle_issues: dict[str, tuple[dict | None, list[dict]]] | None = None,
+    ):
         self._cycle = cycle
         self._issues = issues
         self._members = members
+        self._cycle_issues = cycle_issues or {}
 
     def current_cycle_issues(self, team_id: str) -> tuple[dict | None, list[dict]]:
         return self._cycle, self._issues
+
+    def active_cycle(self, team_id: str) -> dict | None:
+        return self._cycle
+
+    def cycle_issues(self, cycle_linear_id: str) -> tuple[dict | None, list[dict]]:
+        if cycle_linear_id in self._cycle_issues:
+            return self._cycle_issues[cycle_linear_id]
+        if self._cycle is not None and self._cycle.get("id") == cycle_linear_id:
+            return self._cycle, self._issues
+        return None, []
 
     def team_members(self, team_id: str) -> list[dict]:
         return self._members
@@ -394,3 +418,150 @@ def test_new_cycle_copies_group_and_capacity_not_leave() -> None:
         )
         assert old_snapshot is not None
         assert old_snapshot.unavailable_days == 2.0
+
+
+def test_sync_cycle_issues_only_preserves_membership() -> None:
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
+        db.add(team)
+        db.flush()
+        cycle = _add_cycle(db, team, "old", name="Cycle 4", number=4)
+        team.current_cycle_id = cycle.id
+        member = TeamMember(team_id=team.id, linear_id="u1", name="Ada")
+        db.add(member)
+        db.flush()
+        db.add(
+            CycleMembership(
+                team_id=team.id,
+                cycle_id=cycle.id,
+                member_id=member.id,
+                member_linear_id="u1",
+                unavailable_days=3.0,
+            )
+        )
+        db.add(
+            Issue(
+                linear_id="i1",
+                team_id=team.id,
+                cycle_id=cycle.id,
+                identifier="ENG-1",
+                title="Stale",
+                estimate=1.0,
+            )
+        )
+        db.commit()
+
+        client = _FakeSyncClient(
+            None,
+            [],
+            [],
+            cycle_issues={
+                "old": (
+                    {"id": "old", "name": "Cycle 4", "number": 4},
+                    [
+                        {
+                            "id": "i2",
+                            "identifier": "ENG-2",
+                            "title": "Fresh",
+                            "estimate": 5.0,
+                            "state": {"name": "Done", "type": "completed"},
+                        }
+                    ],
+                )
+            },
+        )
+        count = sync_cycle_issues_only(db, client, team, cycle)
+        db.commit()
+
+        assert count == 1
+        issue = db.scalar(select(Issue).where(Issue.team_id == team.id))
+        assert issue is not None and issue.linear_id == "i2"
+        snapshot = db.scalar(
+            select(CycleMembership).where(CycleMembership.cycle_id == cycle.id)
+        )
+        assert snapshot is not None and snapshot.unavailable_days == 3.0
+
+
+def test_finalize_refreshes_closing_cycle_and_advances() -> None:
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
+        db.add(team)
+        db.flush()
+        old = _add_cycle(db, team, "old", name="Cycle 4", number=4)
+        team.current_cycle_id = old.id
+        db.add(
+            Issue(
+                linear_id="i1",
+                team_id=team.id,
+                cycle_id=old.id,
+                identifier="ENG-1",
+                title="Stale",
+                estimate=1.0,
+            )
+        )
+        db.commit()
+
+        client = _FakeSyncClient(
+            {"id": "new", "name": "Cycle 5", "number": 5},
+            [
+                {
+                    "id": "i-new",
+                    "identifier": "ENG-9",
+                    "title": "New cycle",
+                    "estimate": 2.0,
+                }
+            ],
+            [],
+            cycle_issues={
+                "old": (
+                    {"id": "old", "name": "Cycle 4", "number": 4},
+                    [
+                        {
+                            "id": "i-closed",
+                            "identifier": "ENG-1",
+                            "title": "Closed out",
+                            "estimate": 4.0,
+                        }
+                    ],
+                )
+            },
+        )
+
+        summary = finalize_team_cycle(db, client, team, refresh_issues=True)
+        assert summary.issues_refreshed == 1
+        assert summary.advanced is True
+        assert old.is_finalized
+
+        closed_issue = db.scalar(
+            select(Issue).where(Issue.cycle_id == old.id, Issue.linear_id == "i-closed")
+        )
+        assert closed_issue is not None
+        current = db.get(Cycle, team.current_cycle_id)
+        assert current is not None and current.linear_id == "new"
+        assert db.scalar(select(Issue).where(Issue.linear_id == "i-new")) is not None
+
+
+def test_finalize_without_refresh_when_linear_still_on_same_cycle() -> None:
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        team = Team(linear_id="t1", key="ENG", name="Engineering")
+        db.add(team)
+        db.flush()
+        cycle = _add_cycle(db, team, "c1", name="Cycle 4", number=4)
+        team.current_cycle_id = cycle.id
+        db.commit()
+
+        client = _FakeSyncClient({"id": "c1", "name": "Cycle 4", "number": 4}, [], [])
+
+        summary = finalize_team_cycle(db, client, team, refresh_issues=False)
+        assert summary.advanced is False
+        assert cycle.is_finalized
+        assert team.current_cycle_id == cycle.id

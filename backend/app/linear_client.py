@@ -37,17 +37,7 @@ query Teams($after: String) {
 }
 """
 
-CURRENT_CYCLE_ISSUES_QUERY = """
-query TeamCurrentCycleIssues($teamId: String!, $after: String) {
-  team(id: $teamId) {
-    activeCycle {
-      id
-      name
-      number
-      startsAt
-      endsAt
-      issues(first: 100, after: $after) {
-        nodes {
+_CYCLE_ISSUE_FIELDS = """
           id
           identifier
           title
@@ -68,9 +58,55 @@ query TeamCurrentCycleIssues($teamId: String!, $after: String) {
           labels { nodes { name } }
           addedToCycleAt
           parent { id }
-        }
-        pageInfo { hasNextPage endCursor }
-      }
+"""
+
+CURRENT_CYCLE_ISSUES_QUERY = f"""
+query TeamCurrentCycleIssues($teamId: String!, $after: String) {{
+  team(id: $teamId) {{
+    activeCycle {{
+      id
+      name
+      number
+      startsAt
+      endsAt
+      issues(first: 100, after: $after) {{
+        nodes {{
+{_CYCLE_ISSUE_FIELDS}
+        }}
+        pageInfo {{ hasNextPage endCursor }}
+      }}
+    }}
+  }}
+}}
+"""
+
+CYCLE_ISSUES_QUERY = f"""
+query CycleIssues($cycleId: String!, $after: String) {{
+  cycle(id: $cycleId) {{
+    id
+    name
+    number
+    startsAt
+    endsAt
+    issues(first: 100, after: $after) {{
+      nodes {{
+{_CYCLE_ISSUE_FIELDS}
+      }}
+      pageInfo {{ hasNextPage endCursor }}
+    }}
+  }}
+}}
+"""
+
+TEAM_ACTIVE_CYCLE_QUERY = """
+query TeamActiveCycle($teamId: String!) {
+  team(id: $teamId) {
+    activeCycle {
+      id
+      name
+      number
+      startsAt
+      endsAt
     }
   }
 }
@@ -288,6 +324,51 @@ class LinearClient:
                 }
 
             connection = active_cycle.get("issues") or {}
+            issues.extend(connection.get("nodes") or [])
+            page = connection.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                return cycle, issues
+            after = page.get("endCursor")
+
+    def active_cycle(self, team_linear_id: str) -> dict[str, Any] | None:
+        """Return the team's active cycle metadata, or ``None`` if there isn't one."""
+        data = self._post(TEAM_ACTIVE_CYCLE_QUERY, {"teamId": team_linear_id})
+        team = data.get("team") or {}
+        active = team.get("activeCycle")
+        if active is None:
+            return None
+        return {
+            key: active.get(key)
+            for key in ("id", "name", "number", "startsAt", "endsAt")
+        }
+
+    def cycle_issues(
+        self, cycle_linear_id: str
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        """Return a cycle and all of its issues by Linear cycle id.
+
+        Returns ``(None, [])`` when the cycle does not exist.
+        """
+        issues: list[dict[str, Any]] = []
+        cycle: dict[str, Any] | None = None
+        after: str | None = None
+
+        while True:
+            data = self._post(
+                CYCLE_ISSUES_QUERY,
+                {"cycleId": cycle_linear_id, "after": after},
+            )
+            remote = data.get("cycle")
+            if remote is None:
+                return None, []
+
+            if cycle is None:
+                cycle = {
+                    key: remote.get(key)
+                    for key in ("id", "name", "number", "startsAt", "endsAt")
+                }
+
+            connection = remote.get("issues") or {}
             issues.extend(connection.get("nodes") or [])
             page = connection.get("pageInfo") or {}
             if not page.get("hasNextPage"):

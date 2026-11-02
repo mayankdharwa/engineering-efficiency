@@ -210,6 +210,15 @@ export interface CycleSettingsIn {
   members?: CycleMemberAvailabilityIn[]
 }
 
+export interface CycleFinalizeIn {
+  refresh_issues?: boolean
+}
+
+export interface CycleFinalizeOut extends CycleSettingsOut {
+  loaded_next_cycle: boolean
+  issues_refreshed: number | null
+}
+
 export interface DataImportOut {
   ok: boolean
   teams: number

@@ -320,6 +320,15 @@ class CycleSettingsIn(BaseModel):
     members: list[CycleMemberAvailabilityIn] = []
 
 
+class CycleFinalizeIn(BaseModel):
+    refresh_issues: bool = False
+
+
+class CycleFinalizeOut(CycleSettingsOut):
+    loaded_next_cycle: bool = False
+    issues_refreshed: int | None = None
+
+
 class ProjectIssueOut(BaseModel):
     id: int
     identifier: str

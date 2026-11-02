@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 
 from ..app_settings import get_app_settings
 from ..auth import require_admin
-from ..cycles import apply_cycle_member_updates, build_cycle_settings_out
+from ..cycles import apply_cycle_member_updates, build_cycle_settings_out, format_cycle_label
 from ..database import get_db
 from ..metrics import get_cycle, weekdays_between
-from ..models import Cycle, utcnow
-from ..schemas import CycleOut, CycleSettingsIn, CycleSettingsOut
+from ..models import Cycle, SyncKind, SyncStatus
+from ..schemas import CycleFinalizeIn, CycleFinalizeOut, CycleOut, CycleSettingsIn, CycleSettingsOut
+from ..sync import client_from_config, finalize_team_cycle, record_sync_run
 from .deps import get_team_or_404, resolve_cycle_or_404
+from .teams import _tracked_sync_run
 
 router = APIRouter(prefix="/teams", tags=["cycles"])
 
@@ -109,15 +111,18 @@ def update_cycle_settings(
 
 @router.post(
     "/{team_id}/cycle/finalize",
-    response_model=CycleSettingsOut,
+    response_model=CycleFinalizeOut,
     dependencies=[Depends(require_admin)],
 )
-def finalize_cycle(team_id: int, db: Session = Depends(get_db)) -> CycleSettingsOut:
+def finalize_cycle(
+    team_id: int,
+    payload: CycleFinalizeIn | None = None,
+    db: Session = Depends(get_db),
+) -> CycleFinalizeOut:
     """Mark the team's current cycle as finalized (frozen).
 
-    Finalization preserves the cycle's data and is required before a refresh can
-    switch the team to a newer cycle. It is scoped to one team, so teams on
-    different cycle schedules roll over independently.
+    Optionally sync issue rows from Linear for the closing cycle first, then
+    load Linear's active cycle when it is newer than the one being closed.
     """
     team = get_team_or_404(db, team_id)
     cycle = get_cycle(db, team)
@@ -126,7 +131,63 @@ def finalize_cycle(team_id: int, db: Session = Depends(get_db)) -> CycleSettings
             status_code=400,
             detail="No cycle for this team yet. Refresh to load one.",
         )
-    if not cycle.is_finalized:
-        cycle.archived_at = utcnow()
-        db.commit()
-    return build_cycle_settings_out(db, team, cycle)
+
+    body = payload or CycleFinalizeIn()
+    was_already_finalized = cycle.is_finalized
+    with _tracked_sync_run(db, SyncKind.ISSUES, team_id=team.id) as run:
+        try:
+            with client_from_config(db) as client:
+                summary = finalize_team_cycle(
+                    db, client, team, refresh_issues=body.refresh_issues
+                )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        parts: list[str] = []
+        if summary.issues_refreshed is not None:
+            parts.append(
+                f"Synced {summary.issues_refreshed} issue(s) for the closing cycle."
+            )
+        if not was_already_finalized:
+            parts.append("Cycle finalized.")
+        elif summary.advanced:
+            parts.append("Loaded next cycle.")
+
+        if summary.advanced and summary.advance is not None:
+            if summary.advance.has_active_cycle:
+                label = format_cycle_label(
+                    summary.advance.cycle_name,
+                    summary.advance.cycle_number,
+                    summary.advance.cycle_id,
+                )
+                parts.append(
+                    f"Loaded {summary.advance.issues_synced} issue(s) from {label}."
+                )
+            else:
+                parts.append("No active cycle in Linear.")
+
+        message = " ".join(parts) if parts else "Cycle finalized."
+        issues_synced = summary.issues_refreshed or 0
+        if summary.advance is not None:
+            issues_synced += summary.advance.issues_synced
+
+        record_sync_run(
+            db,
+            kind=SyncKind.ISSUES,
+            status=SyncStatus.SUCCESS,
+            team_id=team.id,
+            message=message,
+            issues_synced=issues_synced,
+            run=run,
+        )
+
+    current = get_cycle(db, team)
+    settings = build_cycle_settings_out(db, team, current)
+    loaded_next = bool(
+        summary.advanced and summary.advance is not None and summary.advance.has_active_cycle
+    )
+    return CycleFinalizeOut(
+        **settings.model_dump(),
+        loaded_next_cycle=loaded_next,
+        issues_refreshed=summary.issues_refreshed,
+    )

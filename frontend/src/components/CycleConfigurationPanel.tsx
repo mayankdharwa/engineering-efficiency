@@ -1,6 +1,7 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Card,
   CardContent,
@@ -52,6 +53,7 @@ export function CycleConfigurationPanel() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [refreshIssuesBeforeFinalize, setRefreshIssuesBeforeFinalize] = useState(true)
 
   useEffect(() => {
     const data = cycleQuery.data
@@ -73,9 +75,14 @@ export function CycleConfigurationPanel() {
   const cycle = cycleQuery.data
 
   const finalizeMutation = useMutation({
-    mutationFn: () => api.finalizeCycle(requireTeamId(teamId)),
-    onSuccess: () => {
-      notifySuccess('Cycle finalized.')
+    mutationFn: (refreshIssues: boolean) =>
+      api.finalizeCycle(requireTeamId(teamId), { refresh_issues: refreshIssues }),
+    onSuccess: (result) => {
+      notifySuccess(
+        result.loaded_next_cycle
+          ? 'Cycle finalized and the next cycle was loaded from Linear.'
+          : 'Cycle finalized.',
+      )
       if (teamId !== null) invalidateTeamData(queryClient, teamId)
     },
   })
@@ -206,7 +213,8 @@ export function CycleConfigurationPanel() {
             </p>
           ) : cycle?.archived_at ? (
             <p className="text-sm text-muted-foreground">
-              This cycle is locked. Refresh the team to load the next one.
+              This cycle is locked. If Linear has started a newer cycle, refresh the team
+              to load it.
             </p>
           ) : (
             <Button
@@ -225,10 +233,26 @@ export function CycleConfigurationPanel() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Finalize this team's cycle?"
-        description="The cycle is kept. Refresh to load the next one."
+        description="The cycle is kept in history. If Linear has already started the next cycle, it will be loaded automatically."
         confirmLabel="Finalize cycle"
-        onConfirm={() => finalizeMutation.mutate()}
-      />
+        onConfirm={() => finalizeMutation.mutate(refreshIssuesBeforeFinalize)}
+      >
+        <label className="flex cursor-pointer items-start gap-3 py-2 text-sm text-foreground">
+          <Checkbox
+            checked={refreshIssuesBeforeFinalize}
+            onCheckedChange={(checked) =>
+              setRefreshIssuesBeforeFinalize(checked === true)
+            }
+          />
+          <span>
+            Sync issues from Linear before closing
+            <span className="mt-1 block text-muted-foreground">
+              Updates issue state and estimates only. Dates, working days, and member
+              leave are not changed.
+            </span>
+          </span>
+        </label>
+      </ConfirmDialog>
     </div>
   )
 }

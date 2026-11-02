@@ -17,6 +17,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = 'Delete',
+  children,
   onConfirm,
 }: {
   open: boolean
@@ -24,6 +25,7 @@ export function ConfirmDialog({
   title: ReactNode
   description: ReactNode
   confirmLabel?: string
+  children?: ReactNode
   onConfirm: () => void
 }) {
   return (
@@ -33,6 +35,7 @@ export function ConfirmDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction

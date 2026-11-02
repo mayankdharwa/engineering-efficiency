@@ -4,6 +4,8 @@ import type {
   AppSettingsOut,
   AuthStatusOut,
   ConnectionTestOut,
+  CycleFinalizeIn,
+  CycleFinalizeOut,
   CycleOut,
   CycleSettingsIn,
   CycleSettingsOut,
@@ -137,9 +139,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
-  finalizeCycle: (teamId: number) =>
-    request<CycleSettingsOut>(`/teams/${teamId}/cycle/finalize`, {
+  finalizeCycle: (teamId: number, payload: CycleFinalizeIn = {}) =>
+    request<CycleFinalizeOut>(`/teams/${teamId}/cycle/finalize`, {
       method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   listProjects: (teamId: number, completedWithinMonths: ProjectRangeMonths) =>

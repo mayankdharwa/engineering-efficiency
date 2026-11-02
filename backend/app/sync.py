@@ -45,6 +45,16 @@ class SyncSummary:
 
 
 @dataclass
+class FinalizeSummary:
+    """Outcome of finalizing a team's current cycle."""
+
+    closed_cycle_id: int
+    issues_refreshed: int | None = None
+    advanced: bool = False
+    advance: SyncSummary | None = None
+
+
+@dataclass
 class ProjectSyncSummary:
     """Outcome of a project refresh."""
 
@@ -324,6 +334,81 @@ def _stored_cycle_label(db: Session, team: Team) -> str:
     if stored is None:
         return format_cycle_label(missing="no cycle")
     return format_cycle_label(stored.name, stored.number, stored.linear_id)
+
+
+def sync_cycle_issues_only(
+    db: Session, client: LinearClient, team: Team, cycle: Cycle
+) -> int:
+    """Replace issues for ``cycle`` from Linear without touching roster or memberships."""
+    remote_cycle, remote_issues = client.cycle_issues(cycle.linear_id)
+    if remote_cycle is None:
+        raise RuntimeError(
+            "Linear no longer has "
+            f"{format_cycle_label(cycle.name, cycle.number, cycle.linear_id)}."
+        )
+
+    cycle.name = remote_cycle.get("name")
+    cycle.number = _as_int(remote_cycle.get("number"))
+
+    issues = [remote for remote in remote_issues if not remote.get("parent")]
+    db.execute(
+        delete(Issue).where(
+            Issue.team_id == team.id,
+            Issue.cycle_id == cycle.id,
+        )
+    )
+    for remote in issues:
+        db.add(_build_issue(team, remote, cycle))
+    db.flush()
+    return len(issues)
+
+
+def finalize_team_cycle(
+    db: Session,
+    client: LinearClient,
+    team: Team,
+    *,
+    refresh_issues: bool = False,
+) -> FinalizeSummary:
+    """Finalize the team's current cycle and load Linear's active cycle when newer.
+
+    When ``refresh_issues`` is true, issue rows for the closing cycle are
+    replaced from Linear first. Cycle dates, working days, and member snapshots
+    are not modified by that step.
+    """
+    cycle = _stored_cycle(db, team)
+    if cycle is None:
+        raise RuntimeError("No cycle for this team yet. Refresh to load one.")
+
+    issues_refreshed: int | None = None
+    if refresh_issues and not cycle.is_finalized:
+        issues_refreshed = sync_cycle_issues_only(db, client, team, cycle)
+
+    if not cycle.is_finalized:
+        cycle.archived_at = utcnow()
+        db.flush()
+
+    closing_linear_id = cycle.linear_id
+    active = client.active_cycle(team.linear_id)
+    remote_id = active.get("id") if active is not None else None
+
+    advance: SyncSummary | None = None
+    if remote_id is not None and remote_id != closing_linear_id:
+        advance = sync_team_issues(db, client, team)
+        return FinalizeSummary(
+            closed_cycle_id=cycle.id,
+            issues_refreshed=issues_refreshed,
+            advanced=True,
+            advance=advance,
+        )
+
+    db.commit()
+    return FinalizeSummary(
+        closed_cycle_id=cycle.id,
+        issues_refreshed=issues_refreshed,
+        advanced=False,
+        advance=None,
+    )
 
 
 def sync_team_issues(db: Session, client: LinearClient, team: Team) -> SyncSummary:

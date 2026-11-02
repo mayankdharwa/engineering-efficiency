@@ -310,7 +310,7 @@ mounted at `/data`.
 | GET    | `/api/teams/{id}/cycles`    | List stored cycles (name, dates, current/finalized) |
 | GET    | `/api/teams/{id}/cycle`     | Cycle dates, working days, groups, members (`?cycle_id=`) |
 | PUT    | `/api/teams/{id}/cycle`     | Update working days, dates, member leave/counting/group |
-| POST   | `/api/teams/{id}/cycle/finalize` | Finalize (freeze) the team's current cycle for history |
+| POST   | `/api/teams/{id}/cycle/finalize` | Finalize the current cycle; optional issue sync; load next cycle when Linear has one |
 | GET    | `/api/teams/{id}/groups`    | List a team's member groups                  |
 | POST   | `/api/teams/{id}/groups`    | Add a member group (optional colour)         |
 | PUT    | `/api/teams/{id}/groups/{groupId}` | Rename or recolour a member group     |
@@ -408,9 +408,12 @@ A bare `postgresql://` (or the legacy `postgres://`) URL is rewritten to
 Cycles are finalized **per team**, since teams can be on different cycle
 schedules. **Settings → Cycle Configuration → Finalize Cycle** marks the
 selected team's current cycle (`cycles.archived_at`) as finished and keeps its
-issues, cycle row, planned leave and sync history in the same database. Once a
-team's cycle is finalized, refreshing it downloads the next active cycle;
-earlier cycles stay queryable from the Cycles page cycle picker (`?cycle_id=` on
+issues, cycle row, planned leave and sync history in the same database. The
+confirm step can **sync issues from Linear before closing** (issue state and
+estimates only — dates, working days, and member leave are unchanged). When
+Linear already has a newer active cycle, finalize also **loads that next
+cycle** automatically; otherwise use **Refresh** on the team later. Earlier
+cycles stay queryable from the Cycles page cycle picker (`?cycle_id=` on
 stats/issues). Finalized cycle dates, working days and leave are locked. No
 files are copied and there is no app-wide switch.
 
