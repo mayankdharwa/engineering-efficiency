@@ -169,7 +169,12 @@ export function DashboardPage() {
                 fullCapacityPoints={view.fullCapacityPoints}
               />
 
-              <VelocityTrendChart points={view.velocityTrend} />
+              <VelocityTrendChart
+                points={view.velocityTrend}
+                startsAt={stats?.starts_at}
+                endsAt={stats?.ends_at}
+                timeZone={timezone}
+              />
 
               <AdhocByDayChart dates={view.adhocDates} points={view.adhocByDay} />
 
