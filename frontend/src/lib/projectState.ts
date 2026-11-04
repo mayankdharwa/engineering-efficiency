@@ -48,6 +48,16 @@ export function formatProjectState(state: string | null | undefined): string {
   return key.charAt(0).toUpperCase() + key.slice(1)
 }
 
+/** Linear's project status label when known; otherwise the state bucket label. */
+export function formatProjectStatus(
+  state: string | null | undefined,
+  statusName: string | null | undefined,
+): string {
+  const label = statusName?.trim()
+  if (label) return label
+  return formatProjectState(state)
+}
+
 /** An empty selection means every state. */
 export function filterProjectsByState(
   projects: ProjectOut[],

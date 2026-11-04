@@ -893,10 +893,10 @@ def test_sync_leaves_completed_projects_unchanged() -> None:
 
         client = _Client()
         summary = sync_team_projects(db, client, team)
-        assert summary.projects_skipped == 2
-        assert summary.projects_synced == 2
+        assert summary.projects_skipped == 3
+        assert summary.projects_synced == 1
         assert summary.issues_synced == 1
-        assert client.project_calls == ["p-live", "p-new"]
+        assert client.project_calls == ["p-live"]
 
         done_row = db.scalar(select(Project).where(Project.linear_id == "p-done"))
         assert done_row is not None
@@ -941,7 +941,7 @@ def test_sync_leaves_completed_projects_unchanged() -> None:
             ],
         )
         second = sync_team_projects(db, again, team)
-        assert second.projects_skipped == 2
+        assert second.projects_skipped == 3
         kept = db.scalar(select(Project).where(Project.linear_id == "p-finish"))
         assert kept is not None
         assert kept.name == "Finishing renamed"
@@ -1002,7 +1002,7 @@ def test_sync_uses_linear_status_names_for_issue_refresh() -> None:
                             "id": "p-plan",
                             "name": "Plan",
                             "state": "planned",
-                            "status": {"name": "Planned", "type": "planned"},
+                            "status": {"name": "Planning", "type": "planned"},
                             "history": {
                                 "nodes": [],
                                 "pageInfo": {"hasNextPage": False, "endCursor": None},
@@ -1060,9 +1060,14 @@ def test_sync_uses_linear_status_names_for_issue_refresh() -> None:
             db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == paused_row.id)).all()
         )
         assert [issue.identifier for issue in paused_issues] == ["ENG-7"]
+        plan = db.scalar(select(Project).where(Project.linear_id == "p-plan"))
+        assert plan is not None
+        assert plan.state == "planned"
+        assert plan.status_name == "Planning"
         custom = db.scalar(select(Project).where(Project.linear_id == "p-custom"))
         assert custom is not None
         assert custom.state == "started"
+        assert custom.status_name == "Building"
         custom_issues = list(
             db.scalars(select(ProjectIssue).where(ProjectIssue.project_id == custom.id)).all()
         )
@@ -1580,7 +1585,7 @@ def test_project_queries_omit_completed_projects() -> None:
 
     assert calls[0][0] == TEAM_PROJECTS_QUERY
     assert calls[0][1]["filter"] == {
-        "status": {"name": {"in": ["Planned", "In Progress"]}}
+        "status": {"name": {"in": ["Planning", "In Progress"]}}
     }
     assert calls[1][0] == TEAM_PROJECTS_WITHOUT_HISTORY_QUERY
     assert calls[1][1]["filter"] is None
@@ -1588,7 +1593,7 @@ def test_project_queries_omit_completed_projects() -> None:
     assert calls[2][1]["filter"] == {
         "project": {
             "null": False,
-            "status": {"name": {"in": ["Planned", "In Progress"]}},
+            "status": {"name": {"in": ["Planning", "In Progress"]}},
         }
     }
     assert calls[3][0] == PROJECT_QUERY

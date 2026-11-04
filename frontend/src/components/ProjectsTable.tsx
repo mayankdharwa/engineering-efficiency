@@ -28,6 +28,7 @@ import {
 import {
   EXCLUDED_PROJECT_STATE,
   formatProjectState,
+  formatProjectStatus,
   isProjectCompleted,
   projectStateKey,
 } from '../lib/projectState'
@@ -325,9 +326,17 @@ function createColumns(
         const project = ctx.row.original
         const value = project.excluded ? EXCLUDED_PROJECT_STATE : ctx.getValue()
         if (!value) {
-          return <span className="text-muted-foreground">{formatProjectState(value)}</span>
+          return (
+            <span className="text-muted-foreground">
+              {formatProjectStatus(value, project.status_name)}
+            </span>
+          )
         }
-        return <Badge variant={badgeVariantForState(value)}>{formatProjectState(value)}</Badge>
+        return (
+          <Badge variant={badgeVariantForState(value)}>
+            {formatProjectStatus(value, project.status_name)}
+          </Badge>
+        )
       },
     }),
     helper.accessor((row) => calendarSortValue(row.start_date), {

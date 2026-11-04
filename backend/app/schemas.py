@@ -353,6 +353,7 @@ class ProjectOut(BaseModel):
     linear_id: str
     name: str
     state: str | None = None
+    status_name: str | None = None
     start_date: str | None = None
     target_date: str | None = None
     completed_at: datetime | None = None

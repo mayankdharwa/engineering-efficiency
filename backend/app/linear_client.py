@@ -396,7 +396,7 @@ class LinearClient:
         )
 
     def team_projects(self, team_linear_id: str) -> list[dict[str, Any]]:
-        """Return Planned and In Progress projects, including due-date activity.
+        """Return Planning and In Progress projects, including due-date activity.
 
         Other statuses are omitted so their activity logs are not downloaded
         on every refresh. History is nested in the project query. When Linear
@@ -463,7 +463,7 @@ class LinearClient:
             after = page.get("endCursor")
 
     def team_project_issues(self, team_linear_id: str) -> list[dict[str, Any]]:
-        """Return this team's issues on Planned and In Progress projects.
+        """Return this team's issues on Planning and In Progress projects.
 
         Issues owned by another team on the same project are not included.
         Load those with ``project_issues``. Other project statuses are omitted
@@ -511,11 +511,14 @@ def _is_complexity_error(exc: LinearError) -> bool:
     return "complex" in str(exc).lower()
 
 
-# Linear status names. "In Progress" is the default name for the started type.
-_ISSUE_SYNC_STATUS_NAMES = ["Planned", "In Progress"]
+# Linear project status names included in team refresh (issues + due-date history).
+ISSUE_SYNC_PROJECT_STATUS_NAMES = ["Planning", "In Progress"]
 _ISSUE_SYNC_PROJECT_FILTER: dict[str, Any] = {
-    "status": {"name": {"in": _ISSUE_SYNC_STATUS_NAMES}}
+    "status": {"name": {"in": ISSUE_SYNC_PROJECT_STATUS_NAMES}}
 }
 _ISSUE_SYNC_ISSUE_FILTER: dict[str, Any] = {
-    "project": {"null": False, "status": {"name": {"in": _ISSUE_SYNC_STATUS_NAMES}}}
+    "project": {
+        "null": False,
+        "status": {"name": {"in": ISSUE_SYNC_PROJECT_STATUS_NAMES}},
+    }
 }

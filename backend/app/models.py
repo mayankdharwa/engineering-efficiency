@@ -290,6 +290,7 @@ class Project(Base):
     linear_id: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(255))
     state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     start_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
     target_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

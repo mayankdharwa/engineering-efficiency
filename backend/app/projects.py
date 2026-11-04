@@ -63,6 +63,7 @@ class ProjectCostView:
     linear_id: str
     name: str
     state: str | None
+    status_name: str | None
     start_date: str | None
     target_date: str | None
     completed_at: datetime | None
@@ -279,6 +280,7 @@ def compute_team_project_costs(
                 linear_id=project.linear_id,
                 name=project.name,
                 state=project.state,
+                status_name=project.status_name,
                 start_date=project.start_date,
                 target_date=project.target_date,
                 completed_at=project.completed_at,

@@ -91,7 +91,7 @@ def refresh_projects(team_id: int, db: Session = Depends(get_db)) -> ProjectRefr
         if summary.projects_skipped:
             message += (
                 f" Left {summary.projects_skipped} project(s) outside "
-                "Planned and In Progress unchanged."
+                "Planning and In Progress unchanged."
             )
         record_sync_run(
             db,

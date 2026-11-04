@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .cycles import CycleMemberKey, format_cycle_label
 from .datetime_util import parse_iso_datetime
-from .linear_client import LinearClient
+from .linear_client import ISSUE_SYNC_PROJECT_STATUS_NAMES, LinearClient
 from .models import (
     Cycle,
     CycleMembership,
@@ -499,6 +499,7 @@ def _apply_project_fields(
 ) -> None:
     row.name = remote.get("name") or "Untitled project"
     row.state = _stored_state(remote)
+    row.status_name = _status_name(remote)
     row.start_date = remote.get("startDate")
     row.target_date = remote.get("targetDate")
     row.completed_at = parse_dt(remote.get("completedAt"))
@@ -512,10 +513,12 @@ def _is_archived(remote: dict[str, Any]) -> bool:
     return bool(remote.get("archivedAt"))
 
 
-# Status names Linear shows for the projects whose issues and activity we refresh.
-# The deprecated ``state`` field still uses ``started`` for In Progress.
-_ISSUE_SYNC_STATUS_NAMES = frozenset({"planned", "in progress"})
-_ISSUE_SYNC_STATE_TYPES = frozenset({"planned", "started"})
+# Status names whose issues and activity a team refresh downloads.
+_ISSUE_SYNC_STATUS_NAMES = frozenset(
+    name.casefold() for name in ISSUE_SYNC_PROJECT_STATUS_NAMES
+)
+# Deprecated ``state`` field: ``started`` means In Progress when status is absent.
+_ISSUE_SYNC_STATE_TYPES = frozenset({"started"})
 
 
 def _status_name(remote: dict[str, Any]) -> str | None:
@@ -549,8 +552,8 @@ def _stored_state(remote: dict[str, Any]) -> str | None:
 def _syncs_project_work(remote: dict[str, Any]) -> bool:
     """Whether this refresh should download the project's issues and activity.
 
-    Linear's status names are Planned and In Progress. Payloads that only
-    include the deprecated state field use ``planned`` and ``started``.
+    Matches ``ISSUE_SYNC_PROJECT_STATUS_NAMES`` by status name. Payloads that
+    only include the deprecated state field treat ``started`` as In Progress.
     """
     name = _status_name(remote)
     if name is not None:
@@ -727,9 +730,9 @@ def sync_team_projects(db: Session, client: LinearClient, team: Team) -> Project
     teams on the same project.
 
     Issues and due-date activity are downloaded only for Linear statuses
-    Planned and In Progress. Every other non-archived project stays in the
+    Planning and In Progress. Every other non-archived project stays in the
     list and keeps the issues and activity it already has. Sync one project
-    to refresh a status outside that pair.
+    to refresh any other status.
     """
     existing = {
         row.linear_id: row

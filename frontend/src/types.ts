@@ -252,6 +252,7 @@ export interface ProjectOut {
   linear_id: string
   name: string
   state: string | null
+  status_name: string | null
   start_date: string | null
   target_date: string | null
   completed_at: string | null

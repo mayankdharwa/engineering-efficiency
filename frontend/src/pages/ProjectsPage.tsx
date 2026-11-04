@@ -148,7 +148,7 @@ export function ProjectsPage() {
                   {lastSynced
                     ? `Projects synced ${formatRelative(lastSynced)}`
                     : 'Projects have not been synced yet'}
-                  {' · issues sync for Planned and In Progress'}
+                  {' · issues sync for Planning and In Progress'}
                 </p>
               )}
             </div>
