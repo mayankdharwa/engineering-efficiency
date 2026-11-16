@@ -237,6 +237,49 @@ class TeamStatsOut(CycleHeaderOut):
     adhoc_by_day: list[AdhocByDayPointOut] = []
 
 
+class AnalyticsMemberOut(BaseModel):
+    linear_id: str | None = None
+    name: str
+    group_id: int | None = None
+    group_name: str | None = None
+    group_color: str | None = None
+    counts_toward_capacity: bool = True
+    planning_efficiency: float | None = None
+    velocity: float | None = None
+    bandwidth_efficiency: float | None = None
+
+
+class AnalyticsGroupOut(BaseModel):
+    group_id: int | None = None
+    label: str
+    color: str | None = None
+    members: int
+    planning_efficiency: float | None = None
+    velocity: float | None = None
+    bandwidth_efficiency: float | None = None
+
+
+class AnalyticsCycleOut(BaseModel):
+    cycle_id: int
+    cycle_name: str | None = None
+    cycle_number: int | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    planning_efficiency: float | None = None
+    velocity: float | None = None
+    bandwidth_efficiency: float | None = None
+    groups: list[AnalyticsGroupOut] = []
+    members: list[AnalyticsMemberOut] = []
+
+
+class TeamAnalyticsOut(BaseModel):
+    """Cycle-on-cycle efficiency for the most recent cycles of one team."""
+
+    team_id: int
+    cycle_limit: int
+    cycles: list[AnalyticsCycleOut] = []
+
+
 class GroupOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

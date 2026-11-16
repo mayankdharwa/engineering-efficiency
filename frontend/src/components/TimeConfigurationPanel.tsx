@@ -60,6 +60,7 @@ export function TimeConfigurationPanel() {
       setCutoffHour(data.day_cutoff_hour)
       queryClient.invalidateQueries({ queryKey: APP_SETTINGS_QUERY_KEY })
       queryClient.invalidateQueries({ queryKey: queryKeys.allStats })
+      queryClient.invalidateQueries({ queryKey: queryKeys.allAnalytics })
     },
   })
 

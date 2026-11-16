@@ -8,10 +8,11 @@ reads only from that database.
 **Scope:** Linear download, SQLite/Postgres storage, per-team refresh and delete,
 fluid member groups, cycle history, computed cycle metrics (planning efficiency,
 velocity, velocity trend, bandwidth, available points, adhoc and unutilized
-cost), a **Projects** view with point/cost totals, and TanStack Charts
-visualisations.
+cost), a **Projects** view with point/cost totals, an **Analytics** view of
+the last six cycles, and TanStack Charts visualisations.
 
-The app has three top-level pages: **Cycles**, **Projects**, and **Settings**.
+The app has four top-level pages: **Cycles**, **Projects**, **Analytics**, and
+**Settings**.
 
 ## Efficiency model
 
@@ -61,6 +62,8 @@ The app has three top-level pages: **Cycles**, **Projects**, and **Settings**.
   “counts toward capacity” are snapshotted on each cycle and **copied forward**
   when a new cycle is created; planned leave starts at zero on the new cycle.
   The Cycles page recomputes the metrics above per group for the selected cycle.
+  **Analytics** charts velocity, bandwidth efficiency, and planning efficiency
+  across the last six stored cycles, for the team, each group, and each member.
   Members without a group roll up under *Unassigned*.
 - Team-level values are the ratio of team totals (not sums of ratios).
 - Issues with no estimate count as 0 points (flagged as *unestimated*); unassigned
@@ -93,8 +96,8 @@ FastAPI serves both the JSON API under `/api` and the built React SPA.
 Every page and API (except `/api/health` and the login endpoints) requires a
 session cookie. On first launch the app asks you to create an **admin**
 account. Admins can add more users under **Settings → App Users**. **Managers**
-and **Readers** can open Cycles and Projects but cannot open or change Settings;
-Managers can additionally run refreshes, Readers cannot.
+and **Readers** can open Cycles, Projects, and Analytics but cannot open or
+change Settings; Managers can additionally run refreshes, Readers cannot.
 
 ## Repository layout
 
@@ -126,11 +129,11 @@ engineering-efficiency/
     ├── src/
     │   ├── api.ts            # typed API client
     │   ├── types.ts          # shared API types
-    │   ├── router.tsx        # TanStack Router routes (login, Cycles, Projects, Settings)
+    │   ├── router.tsx        # TanStack Router routes (login, Cycles, Projects, Analytics, Settings)
     │   ├── index.css         # Tailwind v4 + shadcn theme tokens
     │   ├── lib/              # formatting, timezone, groups, project-state, table helpers
     │   ├── hooks/            # app settings + shared config team selection
-    │   ├── pages/            # LoginPage, DashboardPage (Cycles), ProjectsPage, ConfigLayout
+    │   ├── pages/            # LoginPage, DashboardPage (Cycles), ProjectsPage, AnalyticsPage, ConfigLayout
     │   ├── components/       # charts, tables, settings panels, ...
     │   └── components/ui/    # shadcn/ui primitives
     ├── components.json       # shadcn configuration / preset
@@ -207,8 +210,9 @@ mounted at `/data`.
 1. Open the app and **create an admin account** (first launch) or **sign in**.
    The password is stored only in the local SQLite database as a hash. Import /
    export never includes accounts. Under **Settings → App Users**, an admin
-   can add more people as **Admin** (full access), **Manager** (Cycles and
-   Projects, can run refreshes), or **Reader** (Cycles and Projects only).
+   can add more people as **Admin** (full access), **Manager** (Cycles,
+   Projects, and Analytics, can run refreshes), or **Reader** (Cycles,
+   Projects, and Analytics only).
 2. Create a Linear **personal API key**: Linear → *Settings* → *Security & access*
    → *Personal API keys*.
 3. Open **Settings**, pick **Linear Setup** in the side panel, paste the key,
@@ -252,7 +256,11 @@ mounted at `/data`.
    column header to sort a table. Shared metric columns are bandwidth, available
    points, velocity, adhoc points and planning efficiency.
    Zero unavailable days and non-positive available points render as a dash.
-10. Open **Projects** and pick a team. **Refresh** downloads that team's Linear
+10. Open **Analytics** and pick a team. The page shows velocity, bandwidth
+    efficiency, and planning efficiency for the last six stored cycles: team
+    and group bars for each cycle, and a member heatmap. The numbers use the
+    same definitions as Cycles, including the working timezone and day cutoff.
+11. Open **Projects** and pick a team. **Refresh** downloads that team's Linear
    projects and their issues (a separate sync from cycle refresh; archived
    projects are not kept). Headline cards show project count, points and total
    cost. Filter by Linear project state (defaults to **started** and
@@ -263,7 +271,7 @@ mounted at `/data`.
    every due date it has had. Green runs from the start to the first due date,
    and amber marks each later due-date change, using the project's Linear
    activity log.
-11. To share a local copy, open **Settings → Import / Export**. **Download
+12. To share a local copy, open **Settings → Import / Export**. **Download
     export** writes a zip containing a JSON snapshot of teams, cycles, issues,
     groups, costs, projects and settings. The Linear API key, login account,
     and any other secrets are never included. The other person imports that
@@ -318,6 +326,7 @@ mounted at `/data`.
 | GET    | `/api/teams/{id}/cost`      | A team's currency symbol and man-day cost    |
 | PUT    | `/api/teams/{id}/cost`      | Update a team's currency symbol and man-day cost |
 | GET    | `/api/teams/{id}/stats`     | Computed efficiency metrics (`?cycle_id=` to pick a cycle) |
+| GET    | `/api/teams/{id}/analytics` | Velocity, bandwidth, and planning for the last six cycles |
 | GET    | `/api/teams/{id}/projects`  | Stored projects with points, cost, due-date history and nested issues |
 | POST   | `/api/teams/{id}/projects/refresh` | Download the team's Linear projects and their issues |
 

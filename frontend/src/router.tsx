@@ -76,6 +76,12 @@ const projectsRoute = createRoute({
   component: lazyRouteComponent(() => import('./pages/ProjectsPage'), 'ProjectsPage'),
 })
 
+const analyticsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/analytics',
+  component: lazyRouteComponent(() => import('./pages/AnalyticsPage'), 'AnalyticsPage'),
+})
+
 const configRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/config',
@@ -153,6 +159,7 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     cyclesRoute,
     projectsRoute,
+    analyticsRoute,
     configRoute.addChildren([
       configIndexRoute,
       linearRoute,
