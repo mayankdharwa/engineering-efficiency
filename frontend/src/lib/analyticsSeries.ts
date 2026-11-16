@@ -175,8 +175,8 @@ export const NO_DATA_LEVEL = 'No data'
 
 /**
  * Nine steps from dark red to dark green. The span from the metric's floor to
- * 100% is split into equal bands. Anything under the floor stays on the first
- * band, and 100% or more stays on the last.
+ * its ceiling is split into equal bands. Anything under the floor stays on the
+ * first band, and the ceiling or more stays on the last.
  */
 const HEAT_COLORS = [
   '#b2182b',
@@ -190,11 +190,17 @@ const HEAT_COLORS = [
   '#32845b',
 ] as const
 
-/** Velocity keeps a 50% floor. The other ratios use the full 0–100% span. */
+/** Velocity runs from 60% to 110%. The other ratios use the full 0–100% span. */
 const HEAT_CLIP_LOW: Record<AnalyticsMetricKey, number> = {
-  velocity: 0.5,
+  velocity: 0.6,
   bandwidth_efficiency: 0,
   planning_efficiency: 0,
+}
+
+const HEAT_CLIP_HIGH: Record<AnalyticsMetricKey, number> = {
+  velocity: 1.1,
+  bandwidth_efficiency: 1,
+  planning_efficiency: 1,
 }
 
 interface HeatBin {
@@ -209,18 +215,20 @@ interface HeatScale {
   range: string[]
 }
 
-function heatScale(clipLow: number): HeatScale {
+function heatScale(clipLow: number, clipHigh: number): HeatScale {
+  const step = (clipHigh - clipLow) / HEAT_COLORS.length
+  // A 5-point grid collapses once a band is narrower than 5 points.
+  const snap = step * 100 >= 5 ? 5 : 1
   const bins = HEAT_COLORS.map((color, index) => {
-    const step = (1 - clipLow) / HEAT_COLORS.length
     const upper = clipLow + (index + 1) * step
     const lower = clipLow + index * step
     const last = index === HEAT_COLORS.length - 1
     return {
       label: last
-        ? `${formatHeatPercent(lower)} and over`
+        ? `${formatHeatPercent(lower, snap)} and over`
         : index === 0
-          ? `Under ${formatHeatPercent(upper)}`
-          : `${formatHeatPercent(lower)}–${formatHeatPercent(upper)}`,
+          ? `Under ${formatHeatPercent(upper, snap)}`
+          : `${formatHeatPercent(lower, snap)}–${formatHeatPercent(upper, snap)}`,
       below: last ? Number.POSITIVE_INFINITY : upper,
       color,
     }
@@ -233,14 +241,20 @@ function heatScale(clipLow: number): HeatScale {
 }
 
 const HEAT_SCALES: Record<AnalyticsMetricKey, HeatScale> = {
-  velocity: heatScale(HEAT_CLIP_LOW.velocity),
-  bandwidth_efficiency: heatScale(HEAT_CLIP_LOW.bandwidth_efficiency),
-  planning_efficiency: heatScale(HEAT_CLIP_LOW.planning_efficiency),
+  velocity: heatScale(HEAT_CLIP_LOW.velocity, HEAT_CLIP_HIGH.velocity),
+  bandwidth_efficiency: heatScale(
+    HEAT_CLIP_LOW.bandwidth_efficiency,
+    HEAT_CLIP_HIGH.bandwidth_efficiency,
+  ),
+  planning_efficiency: heatScale(
+    HEAT_CLIP_LOW.planning_efficiency,
+    HEAT_CLIP_HIGH.planning_efficiency,
+  ),
 }
 
-/** Legend text only. Bin edges stay exact; the printed percent snaps to the nearest 5. */
-function formatHeatPercent(ratio: number): string {
-  const percent = Math.round((ratio * 100) / 5) * 5
+/** Legend text only. Bin edges stay exact; the printed percent snaps to `snap`. */
+function formatHeatPercent(ratio: number, snap: number): string {
+  const percent = Math.round((ratio * 100) / snap) * snap
   return `${percent}%`
 }
 

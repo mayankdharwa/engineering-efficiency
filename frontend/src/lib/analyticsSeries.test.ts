@@ -121,7 +121,7 @@ describe('analytics series', () => {
     )
   })
 
-  it('bins velocity from 50% and the other ratios from 0%', () => {
+  it('bins velocity from 60% to 110% and the other ratios from 0% to 100%', () => {
     assert.equal(heatLevelFor(null, 'velocity'), NO_DATA_LEVEL)
     const colors = [
       '#b2182b',
@@ -136,23 +136,26 @@ describe('analytics series', () => {
     ]
     const velocityStep = 0.5 / colors.length
     colors.forEach((color, index) => {
-      const sample = 0.5 + (index + 0.5) * velocityStep
+      const sample = 0.6 + (index + 0.5) * velocityStep
       assert.equal(heatLevelHex(heatLevelFor(sample, 'velocity'), 'velocity'), color)
     })
-    assert.equal(heatLevelHex(heatLevelFor(0.49, 'velocity'), 'velocity'), '#b2182b')
-    assert.equal(heatLevelHex(heatLevelFor(1, 'velocity'), 'velocity'), '#32845b')
+    assert.equal(heatLevelHex(heatLevelFor(0.59, 'velocity'), 'velocity'), '#b2182b')
+    assert.equal(heatLevelHex(heatLevelFor(0.5, 'velocity'), 'velocity'), '#b2182b')
+    assert.equal(heatLevelHex(heatLevelFor(1, 'velocity'), 'velocity'), '#6fa77a')
+    assert.equal(heatLevelHex(heatLevelFor(1.1, 'velocity'), 'velocity'), '#32845b')
+    assert.equal(heatLevelHex(heatLevelFor(1.3, 'velocity'), 'velocity'), '#32845b')
     assert.deepEqual(
-      colors.map((_, index) => heatLevelFor(0.5 + (index + 0.5) * velocityStep, 'velocity')),
+      colors.map((_, index) => heatLevelFor(0.6 + (index + 0.5) * velocityStep, 'velocity')),
       [
-        'Under 55%',
-        '55%–60%',
-        '60%–65%',
+        'Under 65%',
         '65%–70%',
-        '70%–80%',
-        '80%–85%',
-        '85%–90%',
+        '70%–75%',
+        '75%–80%',
+        '80%–90%',
         '90%–95%',
-        '95% and over',
+        '95%–100%',
+        '100%–105%',
+        '105% and over',
       ],
     )
 
