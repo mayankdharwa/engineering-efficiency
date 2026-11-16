@@ -8,6 +8,11 @@ export function chartHeight(
   return Math.max(min, count * perRow + padding)
 }
 
+/** Shared height for an analytics heatmap and the bar chart beside it. */
+export function heatmapChartHeight(memberCount: number): number {
+  return chartHeight(memberCount, { perRow: 34, padding: 190 })
+}
+
 /** Trim an axis label to `max` characters, appending an ellipsis when clipped. */
 export function truncateLabel(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}…` : value

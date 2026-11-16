@@ -44,6 +44,9 @@ export function Layout({ children }: { children: ReactNode }) {
               <Link to="/projects" className={navIdle} activeProps={{ className: navActive }}>
                 Projects
               </Link>
+              <Link to="/analytics" className={navIdle} activeProps={{ className: navActive }}>
+                Analytics
+              </Link>
               {authQuery.data?.role === 'admin' ? (
                 <Link to="/config" className={navIdle} activeProps={{ className: navActive }}>
                   Settings

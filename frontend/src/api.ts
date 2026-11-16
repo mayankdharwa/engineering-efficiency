@@ -17,6 +17,7 @@ import type {
   ProjectRefreshResult,
   RefreshResult,
   TeamCostOut,
+  TeamAnalyticsOut,
   TeamOut,
   TeamStatsOut,
   UserOut,
@@ -130,6 +131,8 @@ export const api = {
     request<IssueOut[]>(cyclePath(`/teams/${scope.teamId}/issues`, scope)),
   getStats: (scope: Scope) =>
     request<TeamStatsOut>(cyclePath(`/teams/${scope.teamId}/stats`, scope)),
+  getAnalytics: (teamId: number) =>
+    request<TeamAnalyticsOut>(`/teams/${teamId}/analytics`),
 
   listCycles: (teamId: number) => request<CycleOut[]>(`/teams/${teamId}/cycles`),
   getCycleSettings: (scope: Scope) =>

@@ -162,6 +162,47 @@ export interface TeamStatsOut extends CycleSnapshot {
   adhoc_by_day: AdhocByDayPointOut[]
 }
 
+export interface AnalyticsMemberOut {
+  linear_id: string | null
+  name: string
+  group_id: number | null
+  group_name: string | null
+  group_color: string | null
+  counts_toward_capacity: boolean
+  planning_efficiency: number | null
+  velocity: number | null
+  bandwidth_efficiency: number | null
+}
+
+export interface AnalyticsGroupOut {
+  group_id: number | null
+  label: string
+  color: string | null
+  members: number
+  planning_efficiency: number | null
+  velocity: number | null
+  bandwidth_efficiency: number | null
+}
+
+export interface AnalyticsCycleOut {
+  cycle_id: number
+  cycle_name: string | null
+  cycle_number: number | null
+  starts_at: string | null
+  ends_at: string | null
+  planning_efficiency: number | null
+  velocity: number | null
+  bandwidth_efficiency: number | null
+  groups: AnalyticsGroupOut[]
+  members: AnalyticsMemberOut[]
+}
+
+export interface TeamAnalyticsOut {
+  team_id: number
+  cycle_limit: number
+  cycles: AnalyticsCycleOut[]
+}
+
 export interface CycleMemberOut {
   linear_id: string
   name: string

@@ -22,8 +22,11 @@ export const queryKeys = {
   cycle: (scope: Scope | null) => scopeKey('cycle', scope),
   issues: (scope: Scope | null) => scopeKey('issues', scope),
   stats: (scope: Scope | null) => scopeKey('stats', scope),
+  analytics: (teamId: number | null) => ['analytics', teamId] as const,
   /** Prefix matching every team's stats (e.g. after timezone changes). */
   allStats: ['stats'] as const,
+  /** Prefix matching every team's analytics (e.g. after timezone changes). */
+  allAnalytics: ['analytics'] as const,
   groups: (teamId: number | null) => ['groups', teamId] as const,
   teamCost: (teamId: number | null) => ['team-cost', teamId] as const,
   /** Omit the range to match every cached window for one team. */
@@ -40,6 +43,7 @@ function teamScopedKeys(teamId: number) {
     queryKeys.cycles(teamId),
     queryKeys.cycle(scope),
     queryKeys.stats(scope),
+    queryKeys.analytics(teamId),
     queryKeys.groups(teamId),
     queryKeys.teamCost(teamId),
     queryKeys.projects(teamId),

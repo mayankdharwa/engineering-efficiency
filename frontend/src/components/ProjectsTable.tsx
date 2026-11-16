@@ -27,7 +27,6 @@ import {
 } from '../lib/projectHealth'
 import {
   EXCLUDED_PROJECT_STATE,
-  formatProjectState,
   formatProjectStatus,
   isProjectCompleted,
   projectStateKey,
