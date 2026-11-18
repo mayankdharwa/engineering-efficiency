@@ -1,8 +1,11 @@
-import { barX, colorLegend, defineChart, ruleX, stack, text } from '@tanstack/charts'
+import { barX, colorLegend, defineChart, ruleX, stack } from '@tanstack/charts'
+import { angleGrid, polar, radialArea, radialGrid } from '@tanstack/charts/polar'
 import { Chart } from '@tanstack/charts/react'
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
+import { scalePoint } from '@tanstack/charts/scales/point'
 import { tooltip } from '@tanstack/charts/tooltip'
+import { curveLinearClosed } from 'd3-shape'
 import { useMemo } from 'react'
 import {
   Card,
@@ -11,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { chartHeight } from '../lib/chart'
+import { chartHeight, truncateLabel } from '../lib/chart'
 import { formatPercent, formatPoints } from '../lib/format'
 import type { MemberMetricsOut } from '../types'
 
@@ -21,10 +24,10 @@ import type { MemberMetricsOut } from '../types'
 const COLOR_TAKEN = 'var(--primary)'
 const COLOR_CAPACITY = 'var(--muted-foreground)'
 
-/** Bars above this are truncated just short of it, marked with a chevron. */
-const MAX_VELOCITY = 1.2
-/** Where a truncated bar stops, leaving the 120% guide line visible. */
-const TRUNCATED_VELOCITY = 1.17
+/** Velocity rings drawn as polygon guides on the radar, as fractions of done/expected. */
+const VELOCITY_RINGS = [0.25, 0.5, 0.75, 1, 1.25, 1.5] as const
+/** Cap on spoke labels so long member names do not collide around the radar. */
+const MAX_SPOKE_LABEL = 14
 
 interface MetricChartsProps {
   members: MemberMetricsOut[]
@@ -46,6 +49,9 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
     () => counted.filter((member) => member.taken_points > 0),
     [counted],
   )
+  // Row-1 cards share this height so the velocity radar grows with the roster
+  // instead of leaving the space below it empty.
+  const memberChartHeight = chartHeight(counted.length, { perRow: 34, padding: 56 })
 
   const takenVsCapacity = useMemo(() => {
     const capacityRows = counted.map((member) => ({
@@ -82,59 +88,77 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
   }, [counted, fullCapacityPoints])
 
   const velocity = useMemo(() => {
-    const rows = workingMembers.map((member) => {
-      const raw = member.velocity ?? 0
-      const truncated = raw > MAX_VELOCITY
-      return {
-        member: member.name,
-        // Truncated bars stop short of the 120% guide line; the chevron marks
-        // that the real value continues beyond it.
-        value: truncated ? TRUNCATED_VELOCITY : raw,
-        actual: raw,
-        truncated,
-      }
-    })
-    const overflow = rows.filter((row) => row.truncated)
-    const hasOverflow = overflow.length > 0
-    const xMax = hasOverflow
-      ? MAX_VELOCITY
-      : Math.max(1, ...rows.map((row) => row.value))
+    const rows = workingMembers.map((member) => ({
+      member: member.name,
+      velocity: member.velocity ?? 0,
+    }))
+    const names = rows.map((row) => row.member)
+    // Keep 100% (on pace) inside the domain even when everyone is behind it.
+    const radiusScale = scaleLinear()
+      .domain([0, Math.max(1, ...rows.map((row) => row.velocity))])
+      .nice()
+    const radiusMax = radiusScale.domain()[1] ?? 1
+    const ringValues = VELOCITY_RINGS.filter((value) => value <= radiusMax + 1e-9)
+    // Park ring labels halfway between two spokes so they never sit on one.
+    const ringLabelAngle = names.length > 0 ? Math.PI / names.length : 0
     return defineChart({
       marks: [
-        barX(rows, { x: 'value', y: 'member', fill: COLOR_TAKEN }),
-        ruleX([1]),
-        // Dotted 90% threshold reference.
-        ruleX([0.9], { stroke: COLOR_CAPACITY, strokeDasharray: '2 3' }),
-        text(overflow, {
-          x: () => TRUNCATED_VELOCITY,
-          y: 'member',
-          text: () => '»',
-          anchor: 'start',
-          dx: 4,
-          fill: COLOR_TAKEN,
-          fontSize: 15,
-          fontWeight: 700,
+        polar({
+          radiusRatio: 0.85,
+          scales: {
+            angle: { scale: scalePoint<string>().domain(names), wrap: true },
+            radius: { scale: radiusScale },
+          },
+          guides: [
+            radialGrid({
+              values: ringValues,
+              shape: 'polygon',
+              labels: true,
+              labelAngle: ringLabelAngle,
+              format: (value) => formatPercent(Number(value)),
+              stroke: 'var(--border)',
+              labelFill: 'var(--muted-foreground)',
+              labelFontSize: 11,
+            }),
+            // Emphasize the on-pace (100%) ring: the reference the bars used as a rule.
+            radialGrid({
+              values: [1],
+              shape: 'polygon',
+              labels: false,
+              stroke: 'var(--foreground)',
+              strokeWidth: 2,
+            }),
+            angleGrid({
+              labels: true,
+              format: (value) => truncateLabel(String(value), MAX_SPOKE_LABEL),
+              stroke: 'var(--border)',
+              labelFill: 'var(--muted-foreground)',
+              labelFontSize: 11,
+            }),
+          ],
+          marks: [
+            radialArea(rows, {
+              angle: 'member',
+              radius: 'velocity',
+              key: 'member',
+              curve: curveLinearClosed,
+              fill: COLOR_TAKEN,
+              fillOpacity: 0.35,
+              stroke: COLOR_TAKEN,
+              strokeWidth: 2,
+            }),
+          ],
         }),
       ],
-      scales: {
-        x: {
-          scale: scaleLinear().domain([0, xMax]).clamp(true),
-          nice: true,
-          grid: true,
-          axis: { label: 'Velocity (done / expected)', ticks: { format: formatPercent } },
-        },
-        y: { scale: () => scaleBand<string>().padding(0.2) },
-      },
-      margin: hasOverflow ? { right: 20 } : undefined,
-      clip: false,
+      scales: { x: null, y: null },
       tooltip: {
         use: tooltip,
         items: [
-          { channel: 'y', label: 'Member' },
+          { field: 'member', label: 'Member' },
           {
-            field: 'actual',
+            field: 'velocity',
             label: 'Velocity',
-            text: (point) => formatPercent(point.datum.actual),
+            text: (point) => formatPercent(point.datum.velocity),
           },
         ],
       },
@@ -182,7 +206,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
         <CardContent>
           <Chart
             definition={takenVsCapacity}
-            height={chartHeight(counted.length, { perRow: 34, padding: 56 })}
+            height={memberChartHeight}
             ariaLabel="Points taken versus capacity by member"
           />
         </CardContent>
@@ -191,6 +215,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
       <Card>
         <CardHeader>
           <CardTitle>Velocity by person</CardTitle>
+          <CardDescription>Radius is done / expected; 100% is on pace.</CardDescription>
         </CardHeader>
         <CardContent>
           {workingMembers.length === 0 ? (
@@ -198,7 +223,7 @@ export function MetricCharts({ members, fullCapacityPoints }: MetricChartsProps)
           ) : (
             <Chart
               definition={velocity}
-              height={chartHeight(workingMembers.length, { perRow: 34, padding: 56 })}
+              height={memberChartHeight}
               ariaLabel="Velocity by person"
             />
           )}

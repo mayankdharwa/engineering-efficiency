@@ -35,6 +35,9 @@ importers:
       cn:
         specifier: ^0.4.0
         version: 0.4.0
+      d3-shape:
+        specifier: 3.2.0
+        version: 3.2.0
       lucide-react:
         specifier: ^1.52.0
         version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
@@ -54,6 +57,9 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
     devDependencies:
+      '@types/d3-shape':
+        specifier: 3.2.0
+        version: 3.2.0
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4
