@@ -76,6 +76,7 @@
     --trajectory-shift: var(--color-amber-600);
     --trajectory-complete: var(--color-emerald-600);
     --trajectory-today: var(--color-rose-500);
+    --trajectory-earlier: var(--foreground);
     --radius: 0.625rem;
     --sidebar: oklch(0.987 0.002 197.1);
     --sidebar-foreground: oklch(0.148 0.004 228.8);
@@ -115,6 +116,7 @@
     --trajectory-shift: var(--color-amber-400);
     --trajectory-complete: var(--color-emerald-400);
     --trajectory-today: var(--color-rose-400);
+    --trajectory-earlier: var(--foreground);
     --sidebar: oklch(0.218 0.008 223.9);
     --sidebar-foreground: oklch(0.987 0.002 197.1);
     --sidebar-primary: oklch(0.705 0.213 47.604);

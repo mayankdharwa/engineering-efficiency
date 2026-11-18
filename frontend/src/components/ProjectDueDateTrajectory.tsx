@@ -35,6 +35,8 @@ const COLOR_SHIFT = 'var(--trajectory-shift)'
 const COLOR_COMPLETE = 'var(--trajectory-complete)'
 /** Reference line marking the current day, distinct from the plan/shift tones. */
 const COLOR_TODAY = 'var(--trajectory-today)'
+/** Dotted line for a due date pulled earlier, signalling a re-plan. */
+const COLOR_EARLIER = 'var(--trajectory-earlier)'
 const CHECK_OFFSET = 16
 const NAME_MAX = 28
 
@@ -60,6 +62,8 @@ interface Segment extends ChartDatum {
   x1: number
   x2: number
   kind: 'plan' | 'shift'
+  earlier: boolean
+  heading: string
   fromLabel: string
   toLabel: string
   movement: string
@@ -180,32 +184,122 @@ function trajectoryFor(
 
   const segments: Segment[] = []
   const first = dueStops[0]
-  if (startAt !== null && startDate && first && startAt !== first.at) {
-    segments.push({
-      ...shared,
-      id: `${shared.key}:plan`,
-      x1: startAt,
-      x2: first.at,
-      kind: 'plan',
-      fromLabel: formatCalendarDate(startDate),
-      toLabel: formatCalendarDate(first.date),
-      movement: spanLabel(startAt, first.at),
-    })
+  const finalStop = dueStops[dueStops.length - 1]
+  if (finalStop === undefined) return null
+  const peakStop = dueStops.reduce((peak, stop) => (stop.at > peak.at ? stop : peak))
+  const hasPullback = dueStops.some(
+    (stop, index) => index > 0 && stop.at < (dueStops[index - 1]?.at ?? stop.at),
+  )
+  const beforeStart = startAt === null ? [] : dueStops.filter((stop) => stop.at < startAt)
+  const labelAt = (at: number): string => {
+    if (startAt === at && startDate) return formatCalendarDate(startDate)
+    const stop = dueStops.find((item) => item.at === at)
+    return formatCalendarDate(stop?.date ?? finalStop.date)
   }
-  for (let index = 1; index < dueStops.length; index += 1) {
-    const previous = dueStops[index - 1]
-    const next = dueStops[index]
-    if (!previous || !next || previous.at === next.at) continue
-    segments.push({
-      ...shared,
-      id: `${shared.key}:shift:${index}`,
-      x1: previous.at,
-      x2: next.at,
-      kind: 'shift',
-      fromLabel: formatCalendarDate(previous.date),
-      toLabel: formatCalendarDate(next.date),
-      movement: movementLabel(previous.at, next.at),
-    })
+
+  // A due date pulled earlier, or one set before the project started, cannot be
+  // drawn as the plan bar without covering it. Those stretches become dotted
+  // hints while the solid bar runs from the start to the final due date.
+  if (hasPullback || beforeStart.length > 0) {
+    if (beforeStart.length > 0 && startAt !== null) {
+      const earliest = beforeStart.reduce((min, stop) => (stop.at < min.at ? stop : min))
+      segments.push({
+        ...shared,
+        id: `${shared.key}:before-start`,
+        x1: earliest.at,
+        x2: startAt,
+        kind: 'shift',
+        earlier: true,
+        heading: 'Due date before project start',
+        fromLabel: formatCalendarDate(earliest.date),
+        toLabel: formatCalendarDate(startDate ?? earliest.date),
+        movement: spanLabel(earliest.at, startAt),
+      })
+    }
+
+    // Green runs from the start to the first due date at or after it.
+    const firstSolid = startAt === null ? first : dueStops.find((stop) => stop.at >= startAt)
+    const greenEnd =
+      firstSolid && firstSolid.at <= finalStop.at ? firstSolid.at : finalStop.at
+    if (startAt !== null && startDate && greenEnd > startAt) {
+      segments.push({
+        ...shared,
+        id: `${shared.key}:plan`,
+        x1: startAt,
+        x2: greenEnd,
+        kind: 'plan',
+        earlier: false,
+        heading: 'Start to first due date',
+        fromLabel: formatCalendarDate(startDate),
+        toLabel: labelAt(greenEnd),
+        movement: spanLabel(startAt, greenEnd),
+      })
+    }
+
+    // Amber covers every later change up to the final due date.
+    const amberStart = startAt !== null ? greenEnd : (firstSolid?.at ?? finalStop.at)
+    if (finalStop.at > amberStart) {
+      segments.push({
+        ...shared,
+        id: `${shared.key}:shift:final`,
+        x1: amberStart,
+        x2: finalStop.at,
+        kind: 'shift',
+        earlier: false,
+        heading: 'Due date change',
+        fromLabel: labelAt(amberStart),
+        toLabel: formatCalendarDate(finalStop.date),
+        movement: movementLabel(amberStart, finalStop.at),
+      })
+    }
+
+    // Any earlier date that reached past the finish is dotted too.
+    if (peakStop.at > finalStop.at) {
+      segments.push({
+        ...shared,
+        id: `${shared.key}:superseded`,
+        x1: peakStop.at,
+        x2: finalStop.at,
+        kind: 'shift',
+        earlier: true,
+        heading: 'Due date pulled earlier',
+        fromLabel: formatCalendarDate(peakStop.date),
+        toLabel: formatCalendarDate(finalStop.date),
+        movement: movementLabel(peakStop.at, finalStop.at),
+      })
+    }
+  } else {
+    if (startAt !== null && startDate && first && startAt !== first.at) {
+      segments.push({
+        ...shared,
+        id: `${shared.key}:plan`,
+        x1: startAt,
+        x2: first.at,
+        kind: 'plan',
+        earlier: false,
+        heading: 'Start to first due date',
+        fromLabel: formatCalendarDate(startDate),
+        toLabel: formatCalendarDate(first.date),
+        movement: spanLabel(startAt, first.at),
+      })
+    }
+    for (let index = 1; index < dueStops.length; index += 1) {
+      const previous = dueStops[index - 1]
+      const next = dueStops[index]
+      if (!previous || !next || previous.at === next.at) continue
+      segments.push({
+        ...shared,
+        id: `${shared.key}:shift:${index}`,
+        x1: previous.at,
+        x2: next.at,
+        kind: 'shift',
+        earlier: next.at < previous.at,
+        heading: 'Due date change',
+        fromLabel: formatCalendarDate(previous.date),
+        toLabel: formatCalendarDate(next.date),
+        movement: movementLabel(previous.at, next.at),
+      })
+    }
   }
 
   const current = stops.find((stop) => stop.role === 'current')
@@ -231,7 +325,6 @@ function TrajectoryTooltip({
   const datum = points[0]?.datum
   if (!datum) return null
   if (isSegment(datum)) {
-    const heading = datum.kind === 'plan' ? 'Start to first due date' : 'Due date change'
     return (
       <div className="flex max-w-xs flex-col gap-0.5 text-sm">
         <p className="font-medium">{datum.name}</p>
@@ -239,7 +332,7 @@ function TrajectoryTooltip({
           {datum.fromLabel} → {datum.toLabel}
         </p>
         <p className="text-muted-foreground">
-          {heading} · {datum.movement}
+          {datum.heading} · {datum.movement}
         </p>
         {datum.chain.includes('→') ? <p className="tabular-nums">{datum.chain}</p> : null}
       </div>
@@ -333,7 +426,14 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
   const stops = useMemo(() => series.flatMap((item) => item.stops), [series])
   const segments = useMemo(() => series.flatMap((item) => item.segments), [series])
   const planSegments = useMemo(() => segments.filter((segment) => segment.kind === 'plan'), [segments])
-  const shiftSegments = useMemo(() => segments.filter((segment) => segment.kind === 'shift'), [segments])
+  const shiftSegments = useMemo(
+    () => segments.filter((segment) => segment.kind === 'shift' && !segment.earlier),
+    [segments],
+  )
+  const earlierSegments = useMemo(
+    () => segments.filter((segment) => segment.kind === 'shift' && segment.earlier),
+    [segments],
+  )
   const openDots = useMemo(
     () => stops.filter((stop) => stop.role === 'first' || stop.role === 'middle'),
     [stops],
@@ -401,6 +501,17 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
           stroke: COLOR_SHIFT,
           strokeWidth: 2,
           lineCap: 'butt',
+        }),
+        link(earlierSegments, {
+          x1: 'x1',
+          x2: 'x2',
+          y1: 'key',
+          y2: 'key',
+          key: 'id',
+          stroke: COLOR_EARLIER,
+          strokeWidth: 2,
+          lineCap: 'butt',
+          strokeDasharray: '3 3',
         }),
         dot(openDots, {
           x: 'at',
@@ -491,7 +602,7 @@ export function ProjectDueDateTrajectory({ projects }: { projects: ProjectOut[] 
         ],
       },
     })
-  }, [checks, endpointMarks, openDots, planSegments, shiftSegments, stops, today])
+  }, [checks, earlierSegments, endpointMarks, openDots, planSegments, shiftSegments, stops, today])
 
   if (projects.length === 0) {
     return (

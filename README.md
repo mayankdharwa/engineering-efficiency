@@ -270,7 +270,9 @@ mounted at `/data`.
    A separate **Due date trajectory** chart shows each project's start date and
    every due date it has had. Green runs from the start to the first due date,
    and amber marks each later due-date change, using the project's Linear
-   activity log.
+   activity log. A black dotted line marks a due date pulled earlier or one set
+   before the project started, so the final done date is read at the actual
+   finish rather than the superseded plan.
 12. To share a local copy, open **Settings → Import / Export**. **Download
     export** writes a zip containing a JSON snapshot of teams, cycles, issues,
     groups, costs, projects and settings. The Linear API key, login account,
