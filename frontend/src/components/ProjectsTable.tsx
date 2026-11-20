@@ -17,8 +17,14 @@ import {
 } from '@/components/ui/tooltip'
 import { useTimezone } from '../hooks/useAppSettings'
 import { DEFAULT_POINTS_PER_DAY } from '../lib/capacity'
-import { dayUnit, formatCalendarDate, formatPercent, formatPoints } from '../lib/format'
-import { calendarDaysLate, parseIsoDate, weekdaysUntil } from '../lib/timezone'
+import {
+  dayUnit,
+  formatCalendarDate,
+  formatCalendarWeekday,
+  formatPercent,
+  formatPoints,
+} from '../lib/format'
+import { calendarDaysLate, calendarDaysUntil, parseIsoDate, weekdaysUntil } from '../lib/timezone'
 import { badgeVariantForState } from '../lib/issueState'
 import {
   formatProjectHealth,
@@ -187,13 +193,31 @@ function ProjectDueDateCell({
       )
     }
     if (daysAway === 1) {
+      // A single working day away is not always tomorrow (e.g. Friday -> Monday).
+      const label =
+        calendarDaysUntil(targetDate, timezone) === 1
+          ? 'Tomorrow'
+          : formatCalendarWeekday(targetDate)
       return (
         <Tooltip>
           <TooltipTrigger
             delay={200}
             className={`${chipClass} ${projectHealthClassName('ahead')}`}
           >
-            Tomorrow
+            {label}
+          </TooltipTrigger>
+          <TooltipContent>{formattedDate}</TooltipContent>
+        </Tooltip>
+      )
+    }
+    if (daysAway <= 3) {
+      return (
+        <Tooltip>
+          <TooltipTrigger
+            delay={200}
+            className={`${chipClass} ${projectHealthClassName('ahead')}`}
+          >
+            {formatCalendarWeekday(targetDate)}
           </TooltipTrigger>
           <TooltipContent>{formattedDate}</TooltipContent>
         </Tooltip>

@@ -110,6 +110,22 @@ export function weekdaysUntil(
   return days
 }
 
+/** Calendar days after today through `targetDate` in `timeZone`.
+
+Overdue dates return ``null``. A due date of today returns ``0``.
+ */
+export function calendarDaysUntil(
+  targetDate: string,
+  timeZone: string,
+  now: Date = new Date(),
+): number | null {
+  const bounds = dueAndToday(targetDate, timeZone, now)
+  if (!bounds) return null
+  const { dueUtc, todayUtc } = bounds
+  if (dueUtc < todayUtc) return null
+  return Math.round((dueUtc - todayUtc) / MS_PER_DAY)
+}
+
 /** Calendar days `targetDate` is past today in `timeZone`.
 
 A due date of today or later returns ``null``.

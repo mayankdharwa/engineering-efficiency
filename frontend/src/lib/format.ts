@@ -59,6 +59,16 @@ export function formatCalendarDate(value: string | null | undefined): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/** Format a Linear calendar date's weekday (e.g. "Monday") without a timezone shift. */
+export function formatCalendarWeekday(value: string | null | undefined): string {
+  if (!value) return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+  if (!match) return '—'
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString(undefined, { weekday: 'long' })
+}
+
 /** Format a UTC instant (ms) as a short calendar date, e.g. "Sep 30". */
 export function formatUtcDay(value: number): string {
   const date = new Date(value)
